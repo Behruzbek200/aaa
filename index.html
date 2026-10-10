@@ -1,173 +1,580 @@
 <!DOCTYPE html>
-<html lang="uz">
+<html lang="uz" data-theme="light">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>🎁 Mukofot olish</title>
-
-  <!-- Telegram WebApp SDK -->
-  <script src="https://telegram.org/js/telegram-web-app.js"></script>
-
-  <!-- Monetag SDK (Zone ID: 11990967) -->
-  <script src="//libtl.com/sdk.js" data-zone="11990967" data-sdk="show_11990967"></script>
-
-  <style>
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    }
-
-    body {
-      background: #f0f2f5;
-      color: #1a1a1a;
-      min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 20px;
-    }
-
-    .container {
-      background: #ffffff;
-      border-radius: 20px;
-      padding: 32px 24px;
-      max-width: 400px;
-      width: 100%;
-      text-align: center;
-      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
-    }
-
-    .icon {
-      font-size: 64px;
-      margin-bottom: 16px;
-      animation: bounce 2s infinite;
-    }
-
-    @keyframes bounce {
-      0%, 100% { transform: translateY(0); }
-      50% { transform: translateY(-10px); }
-    }
-
-    h1 {
-      font-size: 24px;
-      margin-bottom: 8px;
-      font-weight: 700;
-    }
-
-    .subtitle {
-      font-size: 14px;
-      color: #666;
-      margin-bottom: 28px;
-      line-height: 1.5;
-    }
-
-    .subtitle b { color: #2ea6ff; }
-
-    button {
-      width: 100%;
-      padding: 16px;
-      border: none;
-      border-radius: 12px;
-      font-size: 16px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: all 0.2s;
-      margin-bottom: 12px;
-    }
-
-    .btn-reward {
-      background: linear-gradient(135deg, #ff9500, #ff6b00);
-      color: white;
-      box-shadow: 0 4px 12px rgba(255, 149, 0, 0.3);
-    }
-
-    .btn-reward:active { transform: scale(0.98); }
-
-    .btn-reward:disabled {
-      opacity: 0.6;
-      cursor: not-allowed;
-    }
-
-    .btn-close {
-      background: transparent;
-      color: #888;
-      font-size: 14px;
-      padding: 10px;
-    }
-
-    .status {
-      font-size: 14px;
-      color: #666;
-      margin: 8px 0 16px;
-      min-height: 20px;
-    }
-
-    .status.success { color: #22c55e; }
-    .status.error { color: #ef4444; }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>QR Master</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+<!-- MONETAG SDK (Zone: 11990967) -->
+<script src="//libtl.com/sdk.js" data-zone="11990967" data-sdk="show_11990967"></script>
+<style>
+:root{--bg:#fff;--fg:#0f172a;--muted:#64748b;--card:#f1f5f9;--primary:#6366f1;
+--primary-2:#8b5cf6;--border:#e2e8f0;--success:#22c55e;--danger:#ef4444;--radius:16px}
+[data-theme="dark"]{--bg:#0f172a;--fg:#f1f5f9;--muted:#94a3b8;--card:#1e293b;--border:#334155}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{font-family:-apple-system,sans-serif;background:var(--bg);color:var(--fg);
+padding-bottom:80px;min-height:100dvh}
+.header{display:flex;justify-content:space-between;align-items:center;padding:16px 20px;
+background:var(--bg);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:100}
+.logo{display:flex;align-items:center;gap:10px;font-weight:800;font-size:19px}
+.logo-mark{width:34px;height:34px;border-radius:10px;
+background:linear-gradient(135deg,var(--primary),var(--primary-2));
+display:flex;align-items:center;justify-content:center;color:#fff;font-weight:900}
+.avatar{width:36px;height:36px;border-radius:50%;
+background:linear-gradient(135deg,#06b6d4,var(--primary));
+display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:14px}
+.main{padding:0 16px}
+.hero{margin:16px 0;padding:22px;border-radius:var(--radius);
+background:linear-gradient(135deg,var(--primary),var(--primary-2));color:#fff}
+.hero h2{font-size:20px;margin-bottom:6px}.hero p{font-size:13px;opacity:.9}
+.section-title{font-size:15px;font-weight:700;margin:22px 0 12px;display:flex;
+justify-content:space-between;align-items:center}
+.section-title small{font-size:12px;color:var(--muted);font-weight:500}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.type-card{background:var(--card);border:none;border-radius:14px;padding:14px 8px;
+display:flex;flex-direction:column;align-items:center;gap:6px;cursor:pointer;
+color:var(--fg);font-family:inherit;transition:transform .15s}
+.type-card:active{transform:scale(.94)}
+.type-icon{font-size:24px}.type-label{font-size:11px;text-align:center;font-weight:600}
+.nav{position:fixed;bottom:0;left:0;right:0;display:flex;background:var(--bg);
+border-top:1px solid var(--border);padding:8px 0 calc(8px + env(safe-area-inset-bottom))}
+.nav-btn{flex:1;background:none;border:none;color:var(--muted);display:flex;
+flex-direction:column;align-items:center;gap:2px;padding:6px;font-size:10px;
+font-weight:600;cursor:pointer;font-family:inherit}
+.nav-btn.active{color:var(--primary)}
+.nav-btn .ico{font-size:20px}
+.page{display:none;animation:fade .25s}.page.active{display:block}
+@keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.field{margin-bottom:14px}.field label{display:block;font-size:13px;color:var(--muted);
+margin-bottom:6px;font-weight:600}
+.input,.select,.textarea{width:100%;padding:14px 16px;background:var(--card);
+border:1.5px solid transparent;border-radius:14px;font-size:15px;color:var(--fg);
+outline:none;font-family:inherit}
+.input:focus,.textarea:focus,.select:focus{border-color:var(--primary)}
+.textarea{resize:vertical;min-height:80px}
+.btn{width:100%;padding:16px;border:none;border-radius:14px;font-size:15px;
+font-weight:700;cursor:pointer;font-family:inherit;transition:transform .15s}
+.btn:active{transform:scale(.97)}
+.btn-primary{background:linear-gradient(135deg,var(--primary),var(--primary-2));color:#fff}
+.btn-ghost{background:var(--card);color:var(--fg)}
+.qr-result{margin-top:20px;padding:20px;border-radius:var(--radius);
+background:var(--card);text-align:center}
+.qr-result canvas{border-radius:12px;max-width:100%}
+.qr-actions{display:flex;gap:8px;margin-top:14px}
+.qr-actions .btn{padding:12px;font-size:13px}
+.toast-wrap{position:fixed;top:80px;left:50%;transform:translateX(-50%);
+z-index:1000;display:flex;flex-direction:column;gap:8px;pointer-events:none}
+.toast{padding:12px 20px;border-radius:12px;color:#fff;font-size:14px;
+font-weight:600;max-width:85vw;text-align:center}
+.toast.success{background:var(--success)}.toast.error{background:var(--danger)}
+.toast.info{background:var(--primary)}
+.hist-item{display:flex;align-items:center;gap:12px;padding:14px;
+background:var(--card);border-radius:14px;margin-bottom:8px}
+.hist-info{flex:1;min-width:0}.hist-info h4{font-size:14px;font-weight:700;
+margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hist-info p{font-size:12px;color:var(--muted)}
+.icon-btn{width:34px;height:34px;border-radius:10px;border:none;background:var(--bg);
+color:var(--fg);cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center}
+.empty{text-align:center;padding:40px 20px;color:var(--muted);font-size:14px}
+.empty .ico{font-size:44px;display:block;margin-bottom:10px;opacity:.5}
+.profile-card{padding:20px;border-radius:var(--radius);
+background:linear-gradient(135deg,var(--primary),var(--primary-2));color:#fff;
+text-align:center;margin-bottom:16px}
+.profile-card .av{width:70px;height:70px;border-radius:50%;background:rgba(255,255,255,.2);
+margin:0 auto 10px;display:flex;align-items:center;justify-content:center;
+font-size:28px;font-weight:800}
+.profile-card h3{font-size:17px;margin-bottom:4px}
+.profile-card p{font-size:13px;opacity:.85}
+.stats{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:16px}
+.stat{background:rgba(255,255,255,.15);padding:12px;border-radius:12px}
+.stat b{display:block;font-size:22px;font-weight:800}
+.stat span{font-size:11px;opacity:.85}
+.loading{position:fixed;inset:0;background:rgba(15,23,42,.55);display:none;
+align-items:center;justify-content:center;z-index:2000}
+.loading.on{display:flex}
+.spin{width:42px;height:42px;border:3px solid rgba(255,255,255,.25);
+border-top-color:#fff;border-radius:50%;animation:sp .8s linear infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
+.admin-card{background:var(--card);padding:16px;border-radius:14px;margin-bottom:12px}
+.admin-card h3{font-size:15px;font-weight:700;margin-bottom:12px}
+.admin-row{display:flex;justify-content:space-between;padding:8px 0;
+border-bottom:1px solid var(--border);font-size:13px}
+.admin-row:last-child{border-bottom:none}
+.admin-row .val{font-weight:700;color:var(--primary)}
+</style>
 </head>
 <body>
-  <div class="container">
-    <div class="icon">🎁</div>
-    <h1>Mukofot olish</h1>
-    <p class="subtitle">
-      Reklama ko‘ring va <b>3 ta qo‘shimcha tarjima</b> oling
-    </p>
 
-    <button id="watchBtn" class="btn-reward" onclick="watchAdForReward()">
-      🎬 Reklama ko‘rish
-    </button>
+<div class="header">
+  <div class="logo"><div class="logo-mark">QR</div><span>QR Master</span></div>
+  <div class="avatar" id="avatar">U</div>
+</div>
 
-    <p id="status" class="status"></p>
-
-    <button class="btn-close" onclick="closeApp()">
-      ⬅️ Botga qaytish
-    </button>
+<div class="main">
+  <!-- HOME -->
+  <div class="page active" id="page-home">
+    <div class="hero"><h2>🎯 Universal QR Platforma</h2>
+    <p>13+ turdagi QR kod yaratish va dizayn</p></div>
+    <div class="section-title">QR turlari</div>
+    <div class="grid" id="typeGrid"></div>
+    <div class="section-title">So'nggi QR kodlar</div>
+    <div id="recentList"></div>
   </div>
 
-  <script>
-    const tg = window.Telegram.WebApp;
-    tg.expand();
-    tg.ready();
+  <!-- CREATE -->
+  <div class="page" id="page-create">
+    <div class="section-title" id="createTitle">QR kod</div>
+    <div id="dynamicFields"></div>
+    <div class="section-title" style="margin-top:6px">🎨 Dizayn</div>
+    <div class="field"><label>QR rangi</label>
+      <input type="color" id="fillColor" value="#0f172a" style="width:100%;height:50px;border:none;border-radius:12px"></div>
+    <div class="field"><label>Fon rangi</label>
+      <input type="color" id="backColor" value="#ffffff" style="width:100%;height:50px;border:none;border-radius:12px"></div>
+    <div class="field"><label>O'lcham</label>
+      <select class="select" id="qrSize">
+        <option value="256">256×256</option><option value="512" selected>512×512</option>
+        <option value="1024">1024×1024</option></select></div>
+    <div class="field"><label>Xatolik darajasi</label>
+      <select class="select" id="errLevel">
+        <option value="L">L — 7%</option><option value="M" selected>M — 15%</option>
+        <option value="Q">Q — 25%</option><option value="H">H — 30%</option></select></div>
+    <button class="btn btn-primary" id="genBtn">✨ QR kod yaratish</button>
+    <button class="btn btn-ghost" id="backBtn" style="margin-top:8px">← Orqaga</button>
+    <div class="qr-result" id="qrResult" style="display:none">
+      <canvas id="qrCanvas"></canvas>
+      <div class="qr-actions">
+        <button class="btn btn-primary" id="dlBtn">⬇️ Yuklab olish</button>
+        <button class="btn btn-ghost" id="saveHistBtn">💾 Saqlash</button>
+      </div>
+    </div>
+  </div>
 
-    async function watchAdForReward() {
-      const btn = document.getElementById('watchBtn');
-      const status = document.getElementById('status');
+  <!-- HISTORY -->
+  <div class="page" id="page-history">
+    <div class="section-title">🕐 Tarix
+      <small><a href="#" id="clearHist" style="color:var(--danger);text-decoration:none">Tozalash</a></small>
+    </div>
+    <div id="historyList"></div>
+  </div>
 
-      btn.disabled = true;
-      btn.textContent = '⏳ Reklama yuklanmoqda...';
-      status.textContent = '';
-      status.className = 'status';
+  <!-- PROFILE -->
+  <div class="page" id="page-profile">
+    <div class="profile-card">
+      <div class="av" id="profileAv">U</div>
+      <h3 id="profileName">Foydalanuvchi</h3>
+      <p id="profileUsername">@username</p>
+      <div class="stats">
+        <div class="stat"><b id="statCreated">0</b><span>Yaratilgan</span></div>
+        <div class="stat"><b id="statAds">0</b><span>Reklama</span></div>
+      </div>
+    </div>
+    <button class="btn btn-ghost" id="themeBtn">🌗 Mavzuni almashtirish</button>
+    <button class="btn btn-ghost" id="adminBtn" style="margin-top:8px;display:none">⚙️ Admin panel</button>
+  </div>
 
-      try {
-        await show_11990967();
+  <!-- ADMIN -->
+  <div class="page" id="page-admin">
+    <div class="section-title">⚙️ Admin panel</div>
+    <div class="admin-card">
+      <h3>💰 Monetag sozlamalari</h3>
+      <label style="font-size:12px;color:var(--muted)">Reklama yoqilganmi?</label>
+      <select class="input" id="setEnabled" style="margin-bottom:10px">
+        <option value="true">✅ Ha</option>
+        <option value="false">❌ Yo'q</option>
+      </select>
+      <label style="font-size:12px;color:var(--muted)">Boshida nechta QR tekin?</label>
+      <input class="input" id="setFree" type="number" min="0" value="3" style="margin-bottom:10px">
+      <label style="font-size:12px;color:var(--muted)">Har nechta QR dan keyin reklama?</label>
+      <input class="input" id="setPerAd" type="number" min="1" value="5" style="margin-bottom:10px">
+      <button class="btn btn-primary" onclick="Admin.save()">💾 Saqlash</button>
+    </div>
+    <div class="admin-card">
+      <h3>📊 Statistika</h3>
+      <div id="adminStats"></div>
+    </div>
+    <button class="btn btn-ghost" onclick="App.goPage('profile')">← Orqaga</button>
+  </div>
+</div>
 
-        status.textContent = '✅ Rahmat! Mukofot botga yuborildi.';
-        status.className = 'status success';
-        btn.textContent = '🎉 Mukofot olindi';
+<nav class="nav">
+  <button class="nav-btn active" data-page="home"><span class="ico">🏠</span>Asosiy</button>
+  <button class="nav-btn" data-page="history"><span class="ico">🕐</span>Tarix</button>
+  <button class="nav-btn" data-page="profile"><span class="ico">👤</span>Profil</button>
+</nav>
 
-        tg.sendData(JSON.stringify({
-          action: 'reward',
-          reward: 3,
-          timestamp: Date.now()
-        }));
+<div class="toast-wrap" id="toastWrap"></div>
+<div class="loading" id="loading"><div class="spin"></div></div>
 
-        setTimeout(() => tg.close(), 2000);
+<script>
+// ═══════════════════════════════════════════════════════
+// ADMIN ID — o'zgartirmang
+// ═══════════════════════════════════════════════════════
+const ADMIN_ID = 8261542613;
+const MONETAG_ZONE = '11990967';
 
-      } catch (error) {
-        console.error('Reklama xatosi:', error);
-        status.textContent = '❌ Reklama yuklanmadi. Keyinroq urinib ko‘ring.';
-        status.className = 'status error';
-        btn.disabled = false;
-        btn.textContent = '🎬 Qayta urinish';
+// ═══════════════════════════════════════════════════════
+// SOZLAMALAR (localStorage)
+// ═══════════════════════════════════════════════════════
+const Settings = {
+  get(k, def) {
+    return localStorage.getItem('qrm_' + k) || def;
+  },
+  set(k, v) {
+    localStorage.setItem('qrm_' + k, String(v));
+  }
+};
+
+// ═══════════════════════════════════════════════════════
+// REKLAMA MANAGER
+// ═══════════════════════════════════════════════════════
+const AdManager = {
+  async show() {
+    const fn = window['show_' + MONETAG_ZONE];
+    if (typeof fn !== 'function') {
+      console.warn('Monetag SDK yuklanmagan');
+      return false;
+    }
+    try {
+      await fn('pop');
+      return true;
+    } catch (e) {
+      console.warn('Reklama xatosi:', e);
+      return false;
+    }
+  }
+};
+
+// ═══════════════════════════════════════════════════════
+// ADMIN PANEL
+// ═══════════════════════════════════════════════════════
+const Admin = {
+  save() {
+    Settings.set('enabled', document.getElementById('setEnabled').value);
+    Settings.set('free', document.getElementById('setFree').value);
+    Settings.set('per_ad', document.getElementById('setPerAd').value);
+    App.toast('Saqlandi ✅', 'success');
+    this.loadStats();
+  },
+  load() {
+    document.getElementById('setEnabled').value = Settings.get('enabled', 'true');
+    document.getElementById('setFree').value = Settings.get('free', '3');
+    document.getElementById('setPerAd').value = Settings.get('per_ad', '5');
+    this.loadStats();
+  },
+  loadStats() {
+    const history = App.getHistory();
+    const ads = parseInt(Settings.get('total_ads', '0'));
+    document.getElementById('adminStats').innerHTML = `
+      <div class="admin-row"><span>Jami QR</span><span class="val">${history.length}</span></div>
+      <div class="admin-row"><span>Jami reklama</span><span class="val">${ads}</span></div>
+      <div class="admin-row"><span>Taxminiy daromad</span><span class="val">$${(ads * 5.5 / 1000).toFixed(3)}</span></div>
+      <div class="admin-row"><span>Boshida tekin</span><span class="val">${Settings.get('free', '3')}</span></div>
+      <div class="admin-row"><span>Har N QR da reklama</span><span class="val">${Settings.get('per_ad', '5')}</span></div>
+    `;
+  }
+};
+
+// ═══════════════════════════════════════════════════════
+// APP
+// ═══════════════════════════════════════════════════════
+const App = {
+  currentType: 'universal',
+  currentCanvas: null,
+  currentData: null,
+
+  async init() {
+    const tg = window.Telegram?.WebApp;
+    if (tg) {
+      tg.ready(); tg.expand();
+      document.documentElement.setAttribute('data-theme',
+        tg.colorScheme === 'dark' ? 'dark' : 'light');
+    }
+    this.renderTypes();
+    this.bindNav();
+    this.bindForm();
+    this.bindProfile();
+    this.loadProfile();
+    this.loadHistory();
+    // Admin tugmasi
+    const uid = tg?.initDataUnsafe?.user?.id;
+    if (uid === ADMIN_ID) {
+      document.getElementById('adminBtn').style.display = 'block';
+    }
+  },
+
+  loadProfile() {
+    const u = window.Telegram?.WebApp?.initDataUnsafe?.user || {};
+    const f = (u.first_name || 'F').charAt(0).toUpperCase();
+    document.getElementById('avatar').textContent = f;
+    document.getElementById('profileAv').textContent = f;
+    document.getElementById('profileName').textContent =
+      ((u.first_name || '') + ' ' + (u.last_name || '')).trim() || 'Foydalanuvchi';
+    document.getElementById('profileUsername').textContent =
+      u.username ? '@' + u.username : 'Telegram';
+  },
+
+  types: [
+    {id:'universal',icon:'✨',label:'Universal',fields:[{k:'text',l:'Matn / URL',t:'textarea',p:'Istalgan matn'}]},
+    {id:'url',icon:'🔗',label:'URL',fields:[{k:'url',l:'Havola',t:'url',p:'https://example.com'}]},
+    {id:'text',icon:'📝',label:'Matn',fields:[{k:'text',l:'Matn',t:'textarea'}]},
+    {id:'wifi',icon:'📶',label:'Wi-Fi',fields:[
+      {k:'ssid',l:'Tarmoq nomi',t:'text'},{k:'pass',l:'Parol',t:'text'},
+      {k:'sec',l:'Xavfsizlik',t:'select',opts:['WPA','WEP','nopass']}]},
+    {id:'vcard',icon:'👤',label:'Kontakt',fields:[
+      {k:'first',l:'Ism',t:'text'},{k:'last',l:'Familiya',t:'text'},
+      {k:'phone',l:'Telefon',t:'tel'},{k:'email',l:'Email',t:'email'}]},
+    {id:'phone',icon:'📞',label:'Telefon',fields:[{k:'phone',l:'Raqam',t:'tel',p:'+998901234567'}]},
+    {id:'sms',icon:'💬',label:'SMS',fields:[{k:'phone',l:'Telefon',t:'tel'},{k:'msg',l:'Xabar',t:'textarea'}]},
+    {id:'email',icon:'✉️',label:'Email',fields:[{k:'to',l:'Kimga',t:'email'},{k:'subject',l:'Mavzu',t:'text'}]},
+    {id:'tg_profile',icon:'✈️',label:'TG',fields:[{k:'username',l:'Username',t:'text',p:'durov'}]},
+    {id:'instagram',icon:'📸',label:'Instagram',fields:[{k:'username',l:'Username',t:'text'}]},
+    {id:'youtube',icon:'▶️',label:'YouTube',fields:[{k:'url',l:'URL',t:'url'}]},
+    {id:'geo',icon:'📍',label:'Geo',fields:[
+      {k:'lat',l:'Kenglik',t:'text',p:'41.311081'},{k:'lng',l:'Uzunlik',t:'text',p:'69.240562'}]},
+    {id:'custom',icon:'⚙️',label:'Maxsus',fields:[{k:'raw',l:'Format',t:'textarea'}]},
+  ],
+
+  renderTypes() {
+    document.getElementById('typeGrid').innerHTML = this.types.map(t =>
+      `<button class="type-card" data-type="${t.id}">
+        <span class="type-icon">${t.icon}</span>
+        <span class="type-label">${t.label}</span></button>`).join('');
+    document.querySelectorAll('.type-card').forEach(b => {
+      b.onclick = () => this.openCreate(b.dataset.type);
+    });
+  },
+
+  openCreate(id) {
+    const t = this.types.find(x => x.id === id);
+    if (!t) return;
+    this.currentType = id;
+    document.getElementById('createTitle').textContent = `${t.icon} ${t.label}`;
+    document.getElementById('dynamicFields').innerHTML = t.fields.map(f => {
+      let el;
+      if (f.t === 'textarea') el = `<textarea class="textarea" id="f_${f.k}" placeholder="${f.p||''}"></textarea>`;
+      else if (f.t === 'select') el = `<select class="select" id="f_${f.k}">${f.opts.map(o=>`<option>${o}</option>`).join('')}</select>`;
+      else el = `<input class="input" type="${f.t}" id="f_${f.k}" placeholder="${f.p||''}">`;
+      return `<div class="field"><label>${f.l}</label>${el}</div>`;
+    }).join('');
+    document.getElementById('qrResult').style.display = 'none';
+    this.goPage('create');
+  },
+
+  buildPayload() {
+    const v = id => (document.getElementById('f_'+id)?.value || '').trim();
+    const enc = encodeURIComponent;
+    const m = {
+      universal: () => v('text'), text: () => v('text'),
+      url: () => v('url'), youtube: () => v('url'),
+      wifi: () => `WIFI:T:${v('sec')||'WPA'};S:${v('ssid')};P:${v('pass')};;`,
+      vcard: () => ['BEGIN:VCARD','VERSION:3.0',`N:${v('last')};${v('first')};;;`,
+        `FN:${v('first')} ${v('last')}`.trim(),
+        v('phone') ? `TEL:${v('phone')}` : '', v('email') ? `EMAIL:${v('email')}` : '',
+        'END:VCARD'].filter(Boolean).join('\n'),
+      phone: () => `tel:${v('phone')}`,
+      sms: () => `SMSTO:${v('phone')}:${v('msg')}`,
+      email: () => `mailto:${v('to')}?subject=${enc(v('subject'))}`,
+      tg_profile: () => `https://t.me/${v('username').replace('@','')}`,
+      instagram: () => `https://instagram.com/${v('username').replace('@','')}`,
+      geo: () => `geo:${v('lat')},${v('lng')}`,
+      custom: () => v('raw'),
+    };
+    return (m[this.currentType] || (() => ''))();
+  },
+
+  async generate() {
+    const data = this.buildPayload();
+    if (!data) return this.toast("Ma'lumot kiriting", 'error');
+    const size = parseInt(document.getElementById('qrSize').value);
+    const fill = document.getElementById('fillColor').value;
+    const back = document.getElementById('backColor').value;
+    const ecc = document.getElementById('errLevel').value;
+    try {
+      this.showLoading(true);
+      const canvas = document.getElementById('qrCanvas');
+      await QRCode.toCanvas(canvas, data, {
+        width: size, margin: 2, errorCorrectionLevel: ecc,
+        color: { dark: fill, light: back }
+      });
+      this.currentCanvas = canvas;
+      this.currentData = data;
+      document.getElementById('qrResult').style.display = 'block';
+      document.getElementById('qrResult').scrollIntoView({ behavior: 'smooth' });
+      this.toast('Yaratildi ✅', 'success');
+    } catch (e) {
+      this.toast('Xatolik: ' + e.message, 'error');
+    } finally {
+      this.showLoading(false);
+    }
+  },
+
+  download() {
+    if (!this.currentCanvas) return;
+    const a = document.createElement('a');
+    a.href = this.currentCanvas.toDataURL('image/png');
+    a.download = `qrmaster-${Date.now()}.png`;
+    a.click();
+    this.toast('Yuklab olindi ✅', 'success');
+  },
+
+  async saveToHistory() {
+    if (!this.currentData) return;
+    try {
+      // localStorage'ga saqlash
+      const history = this.getHistory();
+      history.unshift({
+        id: Date.now(),
+        type: this.currentType,
+        name: this.types.find(t => t.id === this.currentType)?.label || 'QR',
+        data: this.currentData,
+        dataUrl: this.currentCanvas.toDataURL('image/png'),
+        created_at: new Date().toISOString()
+      });
+      // Faqat 100 ta saqlash
+      localStorage.setItem('qrm_history', JSON.stringify(history.slice(0, 100)));
+      this.toast('Saqlandi 💾', 'success');
+      this.loadHistory();
+
+      // ═══ REKLAMA MANTIG'I ═══
+      const enabled = Settings.get('enabled', 'true') === 'true';
+      const free = parseInt(Settings.get('free', '3'));
+      const perAd = parseInt(Settings.get('per_ad', '5'));
+      const total = history.length;
+
+      if (enabled && perAd > 0 && total > free) {
+        const remaining = total - free;
+        if (remaining % perAd === 0) {
+          // Reklama vaqti keldi
+          setTimeout(async () => {
+            const ok = confirm(
+              `🎬 Reklama ko'rish\n\n` +
+              `Boshida ${free} ta QR tekin.\n` +
+              `Har ${perAd} QR dan keyin qisqa reklama.\n\n` +
+              `Davom etamizmi?`
+            );
+            if (ok) {
+              this.showLoading(true);
+              const watched = await AdManager.show();
+              this.showLoading(false);
+              if (watched) {
+                const ads = parseInt(Settings.get('total_ads', '0')) + 1;
+                Settings.set('total_ads', ads);
+                this.toast('🎁 Rahmat!', 'success');
+                this.updateAdsStat();
+              } else {
+                this.toast("Reklama ko'rilmadi", 'info');
+              }
+            }
+          }, 500);
+        }
       }
+    } catch (e) {
+      this.toast(e.message, 'error');
     }
+  },
 
-    function closeApp() {
-      tg.close();
+  getHistory() {
+    try { return JSON.parse(localStorage.getItem('qrm_history') || '[]'); }
+    catch { return []; }
+  },
+
+  loadHistory() {
+    const list = this.getHistory();
+    this.renderRecent(list);
+    this.renderHistory(list);
+    document.getElementById('statCreated').textContent = list.length;
+    this.updateAdsStat();
+  },
+
+  updateAdsStat() {
+    document.getElementById('statAds').textContent = Settings.get('total_ads', '0');
+  },
+
+  renderRecent(list) {
+    const el = document.getElementById('recentList');
+    const r = list.slice(0, 3);
+    if (!r.length) {
+      el.innerHTML = `<div class="empty"><span class="ico">🎯</span>Hozircha bo'sh</div>`;
+      return;
     }
-  </script>
+    el.innerHTML = r.map(h => `<div class="hist-item"><div class="hist-info">
+      <h4>${h.name}</h4><p>${h.type} · ${new Date(h.created_at).toLocaleString('uz')}</p>
+    </div></div>`).join('');
+  },
+
+  renderHistory(list) {
+    const el = document.getElementById('historyList');
+    if (!list.length) {
+      el.innerHTML = `<div class="empty"><span class="ico">🕐</span>Tarix bo'sh</div>`;
+      return;
+    }
+    el.innerHTML = list.map(h => `<div class="hist-item"><div class="hist-info">
+      <h4>${h.name}</h4><p>${h.type} · ${new Date(h.created_at).toLocaleString('uz')}</p>
+    </div><button class="icon-btn" onclick="App.delQr(${h.id})">🗑</button></div>`).join('');
+  },
+
+  delQr(id) {
+    const list = this.getHistory().filter(h => h.id !== id);
+    localStorage.setItem('qrm_history', JSON.stringify(list));
+    this.loadHistory();
+    this.toast("O'chirildi", 'info');
+  },
+
+  bindProfile() {
+    document.getElementById('themeBtn').onclick = () => {
+      const cur = document.documentElement.getAttribute('data-theme');
+      document.documentElement.setAttribute('data-theme', cur === 'dark' ? 'light' : 'dark');
+    };
+    document.getElementById('adminBtn').onclick = () => {
+      Admin.load();
+      this.goPage('admin');
+    };
+    document.getElementById('clearHist').onclick = e => {
+      e.preventDefault();
+      if (!confirm("Tarix tozalansinmi?")) return;
+      localStorage.removeItem('qrm_history');
+      this.loadHistory();
+      this.toast('Tozalandi', 'success');
+    };
+  },
+
+  bindForm() {
+    document.getElementById('genBtn').onclick = () => this.generate();
+    document.getElementById('backBtn').onclick = () => this.goPage('home');
+    document.getElementById('dlBtn').onclick = () => this.download();
+    document.getElementById('saveHistBtn').onclick = () => this.saveToHistory();
+  },
+
+  bindNav() {
+    document.querySelectorAll('.nav-btn').forEach(b => {
+      b.onclick = () => this.goPage(b.dataset.page);
+    });
+  },
+
+  goPage(name) {
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    document.getElementById('page-' + name)?.classList.add('active');
+    document.querySelectorAll('.nav-btn').forEach(b =>
+      b.classList.toggle('active', b.dataset.page === name));
+    window.scrollTo({ top: 0 });
+  },
+
+  toast(msg, type = 'info') {
+    const w = document.getElementById('toastWrap');
+    const el = document.createElement('div');
+    el.className = 'toast ' + type;
+    el.textContent = msg;
+    w.appendChild(el);
+    setTimeout(() => el.remove(), 2500);
+  },
+
+  showLoading(on) {
+    document.getElementById('loading').classList.toggle('on', on);
+  }
+};
+
+window.addEventListener('DOMContentLoaded', () => App.init());
+</script>
 </body>
 </html>
