@@ -2346,17 +2346,33 @@ def api_qr_save(tg):
     qr_type = body.get("qr_type") or "universal"
     name = (body.get("name") or "QR")[:255]
     add_qr(tg["id"], qr_type, name, data)
-
+        # ═══════════════════════════════════════════════════════════
+    # REKLAMA MANTIG'I
+    # ═══════════════════════════════════════════════════════════
+    # N = free_qr_count  → boshida N ta bepul (masalan 5)
+    # M = qr_per_ad      → undan keyin har M ta bepul, KEYIN 1 reklama
+    #                      (masalan M=2 → 2 bepul + 1 reklama)
+    #
+    # Pattern (N=5, M=2):
+    #   QR 1-5    ✅ bepul
+    #   QR 6      🎬 reklama
+    #   QR 7-8    ✅ bepul
+    #   QR 9      🎬 reklama
+    #   QR 10-11  ✅ bepul
+    #   QR 12     🎬 reklama
+    #   ...
+    # ═══════════════════════════════════════════════════════════
     u = get_user(tg["id"])
     total = u["qr_count"]
-    free = get_int_setting("free_qr_count", 1)
-    unlock = u.get("unlock_count", 0)
-    per_ad = get_int_setting("qr_per_ad", 3)
-    limit = free + unlock
+    N = get_int_setting("free_qr_count", 5)   # 5 ta bepul
+    M = get_int_setting("qr_per_ad", 2)       # keyin har 2 tada
 
+    # ═══ REKLAMA KERAKMI? ═══
+    # Sikl uzunligi = M + 1
+    # N dan keyingi sikl boshidan hisoblanadi
     show_ad = False
-    if per_ad > 0 and total > limit:
-        if (total - limit) % per_ad == 0: show_ad = True
+    if total > N and (total - N - 1) % (M + 1) == 0:
+        show_ad = True
 
     # Botga xabar
     try:
