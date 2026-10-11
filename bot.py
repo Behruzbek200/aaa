@@ -2,45 +2,32 @@
 """
 QR MASTER — TO'LIQ BITTA FAYL
 Ishga tushirish: python bot.py
-Telegram bot + Flask backend + Mini App HTML + Admin panel
 """
-import os, sys, hmac, hashlib, json, threading, time, sqlite3, io, base64
+import os, sys, hmac, hashlib, json, threading, time, sqlite3, io, uuid
 from datetime import datetime
 from functools import wraps
 from urllib.parse import parse_qsl
 
 
-# ═══════════════════════════════════════════════════════════════
-# AVTOMATIK KUTUBXONA O'RNATISH
-# ═══════════════════════════════════════════════════════════════
 def ensure_pkgs():
-    pkgs = {
-        "telebot": "pyTelegramBotAPI",
-        "flask": "Flask",
-        "flask_cors": "Flask-Cors",
-        "qrcode": "qrcode[pil]",
-        "PIL": "Pillow"
-    }
+    pkgs = {"telebot": "pyTelegramBotAPI", "flask": "Flask",
+            "flask_cors": "Flask-Cors", "qrcode": "qrcode[pil]", "PIL": "Pillow"}
     import importlib
     missing = []
     for mod, pkg in pkgs.items():
-        try:
-            importlib.import_module(mod)
-        except ImportError:
-            missing.append(pkg)
+        try: importlib.import_module(mod)
+        except ImportError: missing.append(pkg)
     if missing:
         import subprocess
-        print(f"📦 O'rnatilmoqda: {', '.join(missing)}")
         for pkg in missing:
             subprocess.check_call([sys.executable, "-m", "pip", "install", pkg])
-        print("✅ O'rnatildi! Qayta ishga tushirish...")
         time.sleep(2)
         os.execv(sys.executable, [sys.executable] + sys.argv)
 
 
 ensure_pkgs()
 
-from flask import Flask, request, jsonify, Response
+from flask import Flask, request, jsonify, Response, send_from_directory
 from flask_cors import CORS
 import telebot
 from telebot.types import (
@@ -51,25 +38,24 @@ from telebot.types import (
     ChatMemberRestricted
 )
 import qrcode
-from PIL import Image
 
 
-# ═══════════════════════════════════════════════════════════════
-# SOZLAMALAR
 # ═══════════════════════════════════════════════════════════════
 BOT_TOKEN    = os.getenv("BOT_TOKEN", "8894647397:AAHpIC0PyVsjQ_XgDZOZGAVdOemN9YSBnMA")
-BOT_USERNAME = ""  # Avtomatik olinadi
+BOT_USERNAME = ""
 WEBAPP_URL   = os.getenv("WEBAPP_URL", "http://localhost:8000")
 ADMIN_IDS    = [int(x) for x in os.getenv("ADMIN_IDS", "8261542613").split(",")]
 MONETAG_ZONE = os.getenv("MONETAG_ZONE", "11990967")
 PORT         = int(os.getenv("PORT", 8000))
 DB_FILE      = os.getenv("DB_FILE", "qr_master.db")
+UPLOAD_DIR   = os.getenv("UPLOAD_DIR", "/data/uploads" if os.path.exists("/data") else "uploads")
 # ═══════════════════════════════════════════════════════════════
 
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+print(f"📁 Upload: {UPLOAD_DIR}")
+print(f"💾 DB: {DB_FILE}")
 
-# ═══════════════════════════════════════════════════════════════
-# DATABASE
-# ═══════════════════════════════════════════════════════════════
+
 def db_init():
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
@@ -103,34 +89,30 @@ def db_init():
         PRIMARY KEY(user_id, channel_id))""")
 
     defaults = {
-        "force_sub_enabled": "1", "referral_enabled": "1",
-        "monetag_enabled": "1", "free_qr_count": "5",
+        "force_sub_enabled": "0", "referral_enabled": "1",
+        "monetag_enabled": "1", "free_qr_count": "1",
         "qr_per_ad": "3", "invite_bonus_qr": "10",
     }
     for k, v in defaults.items():
         c.execute("INSERT OR IGNORE INTO settings(key,value) VALUES(?,?)", (k, v))
-    conn.commit()
-    conn.close()
+    conn.commit(); conn.close()
 
 
 def db():
-    conn = sqlite3.connect(DB_FILE)
-    conn.row_factory = sqlite3.Row
-    return conn
+    conn = sqlite3.connect(DB_FILE); conn.row_factory = sqlite3.Row; return conn
 
 
-def get_setting(key, default=""):
+def gs(key, default=""):
     conn = db()
     r = conn.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
     conn.close()
     return r["value"] if r else default
 
 
-def set_setting(key, value):
+def ss(key, value):
     conn = db()
     conn.execute("INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)", (key, str(value)))
-    conn.commit()
-    conn.close()
+    conn.commit(); conn.close()
 
 
 def is_admin(uid):
@@ -163,8 +145,7 @@ def upsert_user(tg):
             last_active=? WHERE telegram_id=?""",
             (tg.get("username"), tg.get("first_name"), tg.get("last_name"), now, tg["id"]))
         is_new = False
-    conn.commit()
-    conn.close()
+    conn.commit(); conn.close()
     return is_new
 
 
@@ -176,8 +157,7 @@ def add_qr(user_id, qr_type, name, qr_data):
          hashlib.sha256(qr_data.encode()).hexdigest(),
          datetime.utcnow().isoformat()))
     conn.execute("UPDATE users SET qr_count=qr_count+1 WHERE telegram_id=?", (user_id,))
-    conn.commit()
-    conn.close()
+    conn.commit(); conn.close()
 
 
 def get_qrs(user_id, limit=50, offset=0):
@@ -204,8 +184,7 @@ def del_qr(qr_id, user_id):
         conn.execute("DELETE FROM qr_history WHERE id=?", (qr_id,))
         conn.execute("UPDATE users SET qr_count=MAX(0,qr_count-1) WHERE telegram_id=?",
                      (user_id,))
-        conn.commit()
-        conn.close()
+        conn.commit(); conn.close()
         return True
     conn.close()
     return False
@@ -218,9 +197,8 @@ def add_ref(referrer, referred):
         conn.execute("INSERT INTO referrals(referrer_id,referred_id,created_at) VALUES(?,?,?)",
                      (referrer, referred, datetime.utcnow().isoformat()))
         conn.execute("UPDATE users SET unlock_count=unlock_count+? WHERE telegram_id=?",
-                     (int(get_setting("invite_bonus_qr", "10")), referrer))
-        conn.commit()
-        return True
+                     (int(gs("invite_bonus_qr", "10")), referrer))
+        conn.commit(); return True
     except sqlite3.IntegrityError:
         return False
     finally:
@@ -258,18 +236,17 @@ def get_all_channels():
     return [dict(r) for r in rows]
 
 
-def save_pending(user_id, channel_id):
+def save_pending(uid, ch_id):
     conn = db()
     conn.execute("INSERT OR REPLACE INTO pending_subs(user_id,channel_id,requested_at) VALUES(?,?,?)",
-                 (user_id, channel_id, datetime.utcnow().isoformat()))
-    conn.commit()
-    conn.close()
+                 (uid, ch_id, datetime.utcnow().isoformat()))
+    conn.commit(); conn.close()
 
 
-def has_pending(user_id, channel_id):
+def has_pending(uid, ch_id):
     conn = db()
     r = conn.execute("SELECT 1 FROM pending_subs WHERE user_id=? AND channel_id=?",
-                     (user_id, channel_id)).fetchone()
+                     (uid, ch_id)).fetchone()
     conn.close()
     return bool(r)
 
@@ -277,24 +254,19 @@ def has_pending(user_id, channel_id):
 def make_qr_png(data):
     qr = qrcode.QRCode(box_size=10, border=4,
                        error_correction=qrcode.constants.ERROR_CORRECT_H)
-    qr.add_data(data)
-    qr.make(fit=True)
+    qr.add_data(data); qr.make(fit=True)
     img = qr.make_image(fill_color="black", back_color="white").convert("RGB")
-    bio = io.BytesIO()
-    img.save(bio, "PNG")
-    bio.seek(0)
+    bio = io.BytesIO(); img.save(bio, "PNG"); bio.seek(0)
     return bio
 
 
 db_init()
-
-
-# ═══════════════════════════════════════════════════════════════
-# BOT
-# ═══════════════════════════════════════════════════════════════
 bot = telebot.TeleBot(BOT_TOKEN, parse_mode="HTML")
 
 
+# ═══════════════════════════════════════════════════════════════
+# SETUP
+# ═══════════════════════════════════════════════════════════════
 def setup_bot():
     global BOT_USERNAME
     try:
@@ -305,54 +277,49 @@ def setup_bot():
             bot.set_chat_menu_button(
                 menu_button=MenuButtonWebApp(
                     text="🚀 QR Master",
-                    web_app=WebAppInfo(url=WEBAPP_URL)
-                )
-            )
-            print(f"✅ Menu button: {WEBAPP_URL}")
+                    web_app=WebAppInfo(url=WEBAPP_URL)))
+            print(f"✅ Menu: {WEBAPP_URL}")
         except Exception as e:
-            print(f"⚠️ Menu button: {e}")
+            print(f"⚠️ Menu: {e}")
+        try:
+            bot.set_my_description("QR Master — 20+ turdagi QR kod yaratish va saqlash boti")
+            bot.set_my_short_description("Universal QR kod generator")
+        except: pass
         bot.set_my_commands([
-            BotCommand("start", "Bosh menyu"),
-            BotCommand("help", "Yordam"),
-            BotCommand("id", "Telegram ID"),
+            BotCommand("start", "🏠 Bosh menyu"),
+            BotCommand("help", "❓ Yordam"),
+            BotCommand("id", "🆔 Telegram ID"),
         ])
     except Exception as e:
         print(f"⚠️ Setup: {e}")
 
 
-def check_member_status(chat_id, user_id):
+# ═══════════════════════════════════════════════════════════════
+# OBUNA
+# ═══════════════════════════════════════════════════════════════
+def check_member(chat_id, user_id):
     try:
-        member = bot.get_chat_member(chat_id, user_id)
-        if isinstance(member, (ChatMemberLeft, ChatMemberBanned)):
-            return False
-        if isinstance(member, (ChatMemberMember, ChatMemberAdministrator, ChatMemberOwner)):
-            return True
-        if isinstance(member, ChatMemberRestricted):
-            return member.is_member
+        m = bot.get_chat_member(chat_id, user_id)
+        if isinstance(m, (ChatMemberLeft, ChatMemberBanned)): return False
+        if isinstance(m, (ChatMemberMember, ChatMemberAdministrator, ChatMemberOwner)): return True
+        if isinstance(m, ChatMemberRestricted): return m.is_member
         return False
     except Exception as e:
-        print(f"⚠️ check_member({chat_id}, {user_id}): {e}")
+        print(f"⚠️ member({chat_id},{user_id}): {e}")
         return None
 
 
 def check_subscription(uid):
-    if is_admin(uid):
-        return True
-    if get_setting("force_sub_enabled") != "1":
-        return True
+    if is_admin(uid): return True
+    if gs("force_sub_enabled") != "1": return True
     channels = get_channels()
-    if not channels:
-        return True
+    if not channels: return True
     for ch in channels:
-        status = check_member_status(ch["chat_id"], uid)
-        if status is True:
-            continue
-        if status is False:
-            return False
-        if ch["check_mode"] == "request":
-            if has_pending(uid, ch["id"]):
-                continue
-            return False
+        st = check_member(ch["chat_id"], uid)
+        if st is True: continue
+        if st is False: return False
+        if ch["check_mode"] == "request" and has_pending(uid, ch["id"]): continue
+        if ch["check_mode"] == "request": return False
         continue
     return True
 
@@ -360,25 +327,19 @@ def check_subscription(uid):
 def sub_prompt(chat_id, uid):
     channels = get_channels()
     if not channels: return
-    text = "🔒 <b>Botdan foydalanish uchun quyidagi kanallarga a'zo bo'ling:</b>\n\n"
+    text = "🔒 <b>Botdan foydalanish uchun obuna bo'ling:</b>\n\n"
     kb = InlineKeyboardMarkup()
     for i, ch in enumerate(channels, 1):
-        status = check_member_status(ch["chat_id"], uid)
-        if status is True:
-            icon = "✅"
-        elif ch["check_mode"] == "request" and has_pending(uid, ch["id"]):
-            icon = "⏳"
-        else:
-            icon = "❌"
+        st = check_member(ch["chat_id"], uid)
+        icon = "✅" if st is True else ("⏳" if has_pending(uid, ch["id"]) else "❌")
         text += f"{icon} {i}. <b>{ch['name']}</b>\n"
-        if status is True:
-            continue
+        if st is True: continue
         if ch["username"]:
-            uname = ch["username"].replace("@", "")
-            kb.add(InlineKeyboardButton(f"📢 {ch['name']}", url=f"https://t.me/{uname}"))
+            kb.add(InlineKeyboardButton(f"📢 {ch['name']}",
+                url=f"https://t.me/{ch['username'].replace('@','')}"))
         elif ch["invite_link"]:
-            btn_text = "📨 So'rov yuborish" if ch["check_mode"] == "request" else f"📢 {ch['name']}"
-            kb.add(InlineKeyboardButton(btn_text, url=ch["invite_link"]))
+            btn = "📨 So'rov yuborish" if ch["check_mode"] == "request" else f"📢 {ch['name']}"
+            kb.add(InlineKeyboardButton(btn, url=ch["invite_link"]))
     kb.add(InlineKeyboardButton("✅ Obunani tekshirish", callback_data="check_sub"))
     bot.send_message(chat_id, text, reply_markup=kb)
 
@@ -400,6 +361,9 @@ def reply_kb():
     return kb
 
 
+# ═══════════════════════════════════════════════════════════════
+# HANDLERS
+# ═══════════════════════════════════════════════════════════════
 @bot.message_handler(commands=["start"])
 def cmd_start(m):
     uid = m.from_user.id
@@ -416,14 +380,13 @@ def cmd_start(m):
                 except: pass
         except: pass
     if not check_subscription(uid):
-        sub_prompt(m.chat.id, uid)
-        return
+        sub_prompt(m.chat.id, uid); return
     u = get_user(uid)
     unlock = u.get("unlock_count", 0) if u else 0
     bot.send_message(m.chat.id,
         f"👋 Salom, <b>{m.from_user.first_name or 'do\'stim'}</b>!\n\n"
         f"🎯 <b>QR Master</b> — universal QR kod generator.\n\n"
-        f"🎁 Bepul limit: <b>{get_setting('free_qr_count')} ta</b>\n"
+        f"🎁 Bepul limit: <b>{gs('free_qr_count')} ta</b>\n"
         f"🔓 Qo'shimcha: <b>{unlock} ta</b>\n\n"
         "Kerakli bo'limni tanlang:",
         reply_markup=reply_kb())
@@ -434,7 +397,7 @@ def cmd_start(m):
 @bot.message_handler(commands=["admin"])
 def cmd_admin(m):
     if not is_admin(m.from_user.id):
-        bot.reply_to(m, "🚫 Admin emas"); return
+        bot.reply_to(m, "🚫"); return
     admin_menu(m.chat.id)
 
 
@@ -442,16 +405,13 @@ def admin_menu(chat_id):
     kb = InlineKeyboardMarkup(row_width=2)
     kb.add(
         InlineKeyboardButton("📊 Statistika", callback_data="adm_stats"),
-        InlineKeyboardButton("👥 Users", callback_data="adm_users:0"),
-    )
+        InlineKeyboardButton("👥 Users", callback_data="adm_users:0"))
     kb.add(
         InlineKeyboardButton("📣 Broadcast", callback_data="adm_bc"),
-        InlineKeyboardButton("🔒 Obuna", callback_data="adm_subs"),
-    )
+        InlineKeyboardButton("🔒 Obuna", callback_data="adm_subs"))
     kb.add(
         InlineKeyboardButton("👑 Adminlar", callback_data="adm_admins"),
-        InlineKeyboardButton("📋 Xabarlar", callback_data="adm_msgs"),
-    )
+        InlineKeyboardButton("📋 Xabarlar", callback_data="adm_msgs"))
     kb.add(InlineKeyboardButton("📢 Reklama", callback_data="adm_ads"))
     bot.send_message(chat_id, "👑 <b>ADMIN PANEL</b>", reply_markup=kb)
 
@@ -464,35 +424,29 @@ def cmd_id(m):
 @bot.message_handler(func=lambda m: m.text == "📜 Mening QR larim")
 def my_qrs(m):
     if not check_subscription(m.from_user.id):
-        sub_prompt(m.chat.id, m.from_user.id)
-        return
+        sub_prompt(m.chat.id, m.from_user.id); return
     show_qrs(m.chat.id, m.from_user.id, 0)
 
 
 def show_qrs(chat_id, uid, offset):
     total = count_qrs(uid)
     if total == 0:
-        bot.send_message(chat_id,
-            "📜 QR kodlar yo'q.\n\n🧩 Mini App orqali yarating!",
+        bot.send_message(chat_id, "📜 QR kodlar yo'q.\n\n🧩 Mini App orqali yarating!",
             reply_markup=InlineKeyboardMarkup().add(
-                InlineKeyboardButton("🚀 QR yaratish", web_app=WebAppInfo(url=WEBAPP_URL))))
+                InlineKeyboardButton("🚀 Yaratish", web_app=WebAppInfo(url=WEBAPP_URL))))
         return
     qrs = get_qrs(uid, 5, offset)
     text = f"📜 <b>Sizning QR kodlaringiz</b> ({offset+1}-{offset+len(qrs)}/{total})\n\n"
     for i, q in enumerate(qrs, 1):
-        text += f"{offset+i}. <b>{q['name']}</b>\n"
-        text += f"   <code>{q['qr_data'][:40]}...</code>\n\n"
+        text += f"{offset+i}. <b>{q['name']}</b>\n   <code>{q['qr_data'][:40]}...</code>\n\n"
     kb = InlineKeyboardMarkup(row_width=4)
     for q in qrs:
         kb.add(
             InlineKeyboardButton(f"📥 #{q['id']}", callback_data=f"qr_dl:{q['id']}"),
-            InlineKeyboardButton(f"🗑 #{q['id']}", callback_data=f"qr_del:{q['id']}")
-        )
+            InlineKeyboardButton(f"🗑 #{q['id']}", callback_data=f"qr_del:{q['id']}"))
     nav = []
-    if offset > 0:
-        nav.append(InlineKeyboardButton("⬅️", callback_data=f"qr_pg:{offset-5}"))
-    if offset + 5 < total:
-        nav.append(InlineKeyboardButton("➡️", callback_data=f"qr_pg:{offset+5}"))
+    if offset > 0: nav.append(InlineKeyboardButton("⬅️", callback_data=f"qr_pg:{offset-5}"))
+    if offset + 5 < total: nav.append(InlineKeyboardButton("➡️", callback_data=f"qr_pg:{offset+5}"))
     if nav: kb.row(*nav)
     bot.send_message(chat_id, text, reply_markup=kb)
 
@@ -502,7 +456,7 @@ def ref_menu(m):
     uid = m.from_user.id
     link = f"https://t.me/{BOT_USERNAME}?start=ref_{uid}"
     total = count_refs(uid)
-    bonus = int(get_setting("invite_bonus_qr", "10"))
+    bonus = int(gs("invite_bonus_qr", "10"))
     kb = InlineKeyboardMarkup()
     kb.add(InlineKeyboardButton("📋 Nusxalash", callback_data="copy_ref"))
     kb.add(InlineKeyboardButton("📤 Ulashish",
@@ -510,10 +464,9 @@ def ref_menu(m):
     if total > 0:
         kb.add(InlineKeyboardButton(f"👥 Ro'yxat ({total})", callback_data="ref_list:0"))
     bot.send_message(m.chat.id,
-        f"👥 <b>Referal tizimi</b>\n\n"
-        f"🔗 <code>{link}</code>\n\n"
+        f"👥 <b>Referal tizimi</b>\n\n🔗 <code>{link}</code>\n\n"
         f"👥 Taklif qilganlar: <b>{total}</b>\n"
-        f"🎁 Har bir referal uchun: <b>+{bonus} bonus QR</b>",
+        f"🎁 Har referal uchun: <b>+{bonus} bonus QR</b>",
         reply_markup=kb)
 
 
@@ -522,36 +475,29 @@ def show_refs(chat_id, uid, offset, msg_id=None):
     refs = get_refs(uid, 10, offset)
     text = f"👥 <b>Referallar</b> ({offset+1}-{offset+len(refs)}/{total})\n\n"
     for i, r in enumerate(refs, 1):
-        name = r.get("first_name") or "Foydalanuvchi"
-        uname = f"@{r['username']}" if r.get("username") else "—"
-        text += f"{offset+i}. {name} ({uname})\n"
+        text += f"{offset+i}. {r.get('first_name') or 'User'} (@{r.get('username') or '—'})\n"
     kb = InlineKeyboardMarkup()
     nav = []
-    if offset > 0:
-        nav.append(InlineKeyboardButton("⬅️", callback_data=f"ref_list:{offset-10}"))
+    if offset > 0: nav.append(InlineKeyboardButton("⬅️", callback_data=f"ref_list:{offset-10}"))
     nav.append(InlineKeyboardButton("🔙", callback_data="ref_back"))
-    if offset + 10 < total:
-        nav.append(InlineKeyboardButton("➡️", callback_data=f"ref_list:{offset+10}"))
+    if offset + 10 < total: nav.append(InlineKeyboardButton("➡️", callback_data=f"ref_list:{offset+10}"))
     kb.row(*nav)
-    if msg_id:
-        bot.edit_message_text(text, chat_id, msg_id, reply_markup=kb)
-    else:
-        bot.send_message(chat_id, text, reply_markup=kb)
+    if msg_id: bot.edit_message_text(text, chat_id, msg_id, reply_markup=kb)
+    else: bot.send_message(chat_id, text, reply_markup=kb)
 
 
 @bot.message_handler(func=lambda m: m.text == "📊 Statistika")
 def stats_menu(m):
     uid = m.from_user.id
     u = get_user(uid)
-    refs = count_refs(uid)
     bot.send_message(m.chat.id,
-        f"📊 <b>Sizning statistikangiz</b>\n\n"
+        f"📊 <b>Statistikangiz</b>\n\n"
         f"🆔 <code>{uid}</code>\n"
         f"👤 {u['first_name'] or '—'}\n"
-        f"🧩 QR kodlar: <b>{u['qr_count']}</b>\n"
+        f"🧩 QR: <b>{u['qr_count']}</b>\n"
         f"📢 Reklama: <b>{u['ad_count']}</b>\n"
         f"🔓 Unlock: <b>{u.get('unlock_count', 0)}</b>\n"
-        f"👥 Referallar: <b>{refs}</b>")
+        f"👥 Referal: <b>{count_refs(uid)}</b>")
 
 
 @bot.message_handler(func=lambda m: m.text == "✉️ Adminga xabar")
@@ -568,19 +514,20 @@ def save_msg(message):
     conn.execute("INSERT INTO support_messages(user_id,message,created_at) VALUES(?,?,?)",
                  (uid, message.text, datetime.utcnow().isoformat()))
     mid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-    conn.commit()
-    conn.close()
+    conn.commit(); conn.close()
     bot.reply_to(message, "✅ Yuborildi!")
-    for admin_id in ADMIN_IDS:
+    for aid in ADMIN_IDS:
         try:
             kb = InlineKeyboardMarkup().add(
                 InlineKeyboardButton("💬 Javob", callback_data=f"reply:{mid}"))
-            bot.send_message(admin_id,
-                f"✉️ <b>#{mid}</b> | @{message.from_user.username or '—'}\n\n{message.text}",
+            bot.send_message(aid, f"✉️ #{mid} | @{message.from_user.username or '—'}\n\n{message.text}",
                 reply_markup=kb)
         except: pass
 
 
+# ═══════════════════════════════════════════════════════════════
+# CALLBACK
+# ═══════════════════════════════════════════════════════════════
 @bot.callback_query_handler(func=lambda c: True)
 def cb(call):
     uid = call.from_user.id
@@ -589,95 +536,71 @@ def cb(call):
 
     if data == "check_sub":
         if check_subscription(uid):
-            try:
-                bot.edit_message_text("✅ <b>Obuna tasdiqlandi!</b>",
-                    uid, call.message.message_id)
+            try: bot.edit_message_text("✅ Tasdiqlandi!", uid, call.message.message_id)
             except: pass
             bot.send_message(uid, "🏠 Bosh menyu:", reply_markup=reply_kb())
         else:
             marked = False
             for ch in get_channels():
-                status = check_member_status(ch["chat_id"], uid)
-                if status is None and ch["check_mode"] == "request":
-                    save_pending(uid, ch["id"])
-                    marked = True
+                if check_member(ch["chat_id"], uid) is None and ch["check_mode"] == "request":
+                    save_pending(uid, ch["id"]); marked = True
             if marked:
-                bot.answer_callback_query(call.id,
-                    "⏳ So'rov qayd etildi! Tasdiq kutilmoqda.", show_alert=True)
+                bot.answer_callback_query(call.id, "⏳ So'rov qayd etildi!", show_alert=True)
                 if check_subscription(uid):
-                    bot.send_message(uid, "✅ Endi foydalanishingiz mumkin:",
-                        reply_markup=reply_kb())
+                    bot.send_message(uid, "✅ Endi foydalanishingiz mumkin:", reply_markup=reply_kb())
             else:
                 bot.answer_callback_query(call.id, "❌ Obuna emas!", show_alert=True)
-                sub_prompt(uid, uid)
 
     elif data == "copy_ref":
         bot.send_message(uid, f"<code>https://t.me/{BOT_USERNAME}?start=ref_{uid}</code>")
-
     elif data.startswith("ref_list:"):
         show_refs(uid, uid, int(data.split(":")[1]), call.message.message_id)
-
     elif data == "ref_back":
-        bot.delete_message(uid, call.message.message_id)
-        ref_menu(call.message)
-
+        bot.delete_message(uid, call.message.message_id); ref_menu(call.message)
     elif data.startswith("qr_pg:"):
-        bot.delete_message(uid, call.message.message_id)
-        show_qrs(uid, uid, int(data.split(":")[1]))
-
+        bot.delete_message(uid, call.message.message_id); show_qrs(uid, uid, int(data.split(":")[1]))
     elif data.startswith("qr_dl:"):
-        qr_id = int(data.split(":")[1])
+        qid = int(data.split(":")[1])
         conn = db()
         r = conn.execute("SELECT qr_data,name FROM qr_history WHERE id=? AND user_id=?",
-                         (qr_id, uid)).fetchone()
+                         (qid, uid)).fetchone()
         conn.close()
         if r:
             try:
                 img = make_qr_png(r["qr_data"])
-                bot.send_photo(uid, InputFile(img, f"qr_{qr_id}.png"),
+                bot.send_photo(uid, InputFile(img, f"qr_{qid}.png"),
                     caption=f"📥 <b>{r['name']}</b>\n\n<code>{r['qr_data'][:100]}</code>")
-            except Exception as e:
-                bot.send_message(uid, f"❌ {e}")
-
+            except Exception as e: bot.send_message(uid, f"❌ {e}")
     elif data.startswith("qr_del:"):
-        qr_id = int(data.split(":")[1])
-        if del_qr(qr_id, uid):
-            bot.delete_message(uid, call.message.message_id)
-            show_qrs(uid, uid, 0)
+        if del_qr(int(data.split(":")[1]), uid):
+            bot.delete_message(uid, call.message.message_id); show_qrs(uid, uid, 0)
 
-    elif not is_admin(uid):
-        return
+    elif not is_admin(uid): return
 
     elif data == "adm_stats":
         conn = db()
-        total = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
-        today = conn.execute("SELECT COUNT(*) FROM users WHERE date(created_at)=date('now')").fetchone()[0]
-        qr_total = conn.execute("SELECT COUNT(*) FROM qr_history").fetchone()[0]
-        ads = conn.execute("SELECT COUNT(*) FROM ad_events WHERE event_type='completed'").fetchone()[0]
+        t = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+        td = conn.execute("SELECT COUNT(*) FROM users WHERE date(created_at)=date('now')").fetchone()[0]
+        q = conn.execute("SELECT COUNT(*) FROM qr_history").fetchone()[0]
+        a = conn.execute("SELECT COUNT(*) FROM ad_events WHERE event_type='completed'").fetchone()[0]
         conn.close()
-        text = (f"📊 <b>STATISTIKA</b>\n\n"
-                f"👥 Jami: <b>{total}</b> | Bugun: <b>{today}</b>\n"
-                f"🧩 QR: <b>{qr_total}</b>\n"
-                f"📢 Reklama: <b>{ads}</b>")
         kb = InlineKeyboardMarkup().add(InlineKeyboardButton("🔙", callback_data="adm_back"))
-        bot.edit_message_text(text, uid, call.message.message_id, reply_markup=kb)
+        bot.edit_message_text(f"📊 <b>STATISTIKA</b>\n\n👥 {t} | Bugun: {td}\n🧩 QR: {q}\n📢 Reklama: {a}",
+            uid, call.message.message_id, reply_markup=kb)
 
     elif data.startswith("adm_users:"):
-        offset = int(data.split(":")[1])
+        off = int(data.split(":")[1])
         conn = db()
-        total = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
-        users = conn.execute("""SELECT * FROM users ORDER BY last_active DESC LIMIT 10 OFFSET ?""",
-                             (offset,)).fetchall()
+        t = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+        users = conn.execute("SELECT * FROM users ORDER BY last_active DESC LIMIT 10 OFFSET ?", (off,)).fetchall()
         conn.close()
-        text = f"👥 <b>Foydalanuvchilar</b> ({offset+1}-{offset+len(users)}/{total})\n\n"
+        text = f"👥 <b>Users</b> ({off+1}-{off+len(users)}/{t})\n\n"
         for i, u in enumerate(users, 1):
-            text += f"{offset+i}. {u['first_name'] or '—'} | <code>{u['telegram_id']}</code>\n"
+            text += f"{off+i}. {u['first_name'] or '—'} | <code>{u['telegram_id']}</code>\n"
         kb = InlineKeyboardMarkup()
         nav = []
-        if offset > 0:
-            nav.append(InlineKeyboardButton("⬅️", callback_data=f"adm_users:{offset-10}"))
-        if offset + 10 < total:
-            nav.append(InlineKeyboardButton("➡️", callback_data=f"adm_users:{offset+10}"))
+        if off > 0: nav.append(InlineKeyboardButton("⬅️", callback_data=f"adm_users:{off-10}"))
+        if off + 10 < t: nav.append(InlineKeyboardButton("➡️", callback_data=f"adm_users:{off+10}"))
         if nav: kb.row(*nav)
         kb.add(InlineKeyboardButton("🔙", callback_data="adm_back"))
         bot.edit_message_text(text, uid, call.message.message_id, reply_markup=kb)
@@ -685,7 +608,6 @@ def cb(call):
     elif data == "adm_bc":
         msg = bot.send_message(uid, "📣 Xabar:")
         bot.register_next_step_handler(msg, bc_ok)
-
     elif data == "adm_bc_ok":
         text = bot._bc_text
         conn = db()
@@ -694,99 +616,73 @@ def cb(call):
         sent = failed = 0
         for u in users:
             try:
-                bot.send_message(u["telegram_id"], text)
-                sent += 1
-                time.sleep(0.05)
-            except:
-                failed += 1
+                bot.send_message(u["telegram_id"], text); sent += 1; time.sleep(0.05)
+            except: failed += 1
         bot.send_message(uid, f"✅ {sent} | ❌ {failed}")
 
-    elif data == "adm_subs":
-        show_subs_menu(uid, call.message.message_id)
-
+    elif data == "adm_subs": show_subs_menu(uid, call.message.message_id)
     elif data == "adm_tog_sub":
-        cur = get_setting("force_sub_enabled", "1")
-        set_setting("force_sub_enabled", "0" if cur == "1" else "1")
-        bot.answer_callback_query(call.id, "✅")
+        ss("force_sub_enabled", "0" if gs("force_sub_enabled") == "1" else "1")
         show_subs_menu(uid, call.message.message_id)
-
     elif data == "adm_add_ch":
         msg = bot.send_message(uid,
-            "📢 <b>Kanal qo'shish</b>\n\n"
-            "Ommaviy: <code>@username|Nomi|member</code>\n"
-            "Yopiq: <code>https://t.me/+XXXX|Nomi|request</code>")
+            "📢 Format:\n<code>@username|Nomi|member</code> — Ommaviy\n"
+            "<code>https://t.me/+XXX|Nomi|request</code> — Yopiq")
         bot.register_next_step_handler(msg, add_ch_step)
-
     elif data.startswith("adm_del_ch:"):
-        ch_id = int(data.split(":")[1])
         conn = db()
-        conn.execute("DELETE FROM channels WHERE id=?", (ch_id,))
-        conn.commit()
-        conn.close()
-        bot.answer_callback_query(call.id, "✅")
+        conn.execute("DELETE FROM channels WHERE id=?", (int(data.split(":")[1]),))
+        conn.commit(); conn.close()
         show_subs_menu(uid, call.message.message_id)
 
     elif data == "adm_admins":
         conn = db()
         extras = conn.execute("SELECT telegram_id FROM admins").fetchall()
         conn.close()
-        all_admins = ADMIN_IDS + [r["telegram_id"] for r in extras]
-        text = "👑 <b>Adminlar</b>\n\n" + "\n".join(f"• <code>{a}</code>" for a in all_admins)
+        all_adm = ADMIN_IDS + [r["telegram_id"] for r in extras]
+        text = "👑 <b>Adminlar</b>\n\n" + "\n".join(f"• <code>{a}</code>" for a in all_adm)
         kb = InlineKeyboardMarkup()
         kb.add(InlineKeyboardButton("➕ Qo'shish", callback_data="adm_add_adm"))
         for a in extras:
-            kb.add(InlineKeyboardButton(f"🗑 {a['telegram_id']}",
-                                        callback_data=f"adm_rm_adm:{a['telegram_id']}"))
+            kb.add(InlineKeyboardButton(f"🗑 {a['telegram_id']}", callback_data=f"adm_rm_adm:{a['telegram_id']}"))
         kb.add(InlineKeyboardButton("🔙", callback_data="adm_back"))
         bot.edit_message_text(text, uid, call.message.message_id, reply_markup=kb)
-
     elif data == "adm_add_adm":
-        msg = bot.send_message(uid, "Yangi admin Telegram ID:")
+        msg = bot.send_message(uid, "Admin Telegram ID:")
         bot.register_next_step_handler(msg, add_adm)
-
     elif data.startswith("adm_rm_adm:"):
-        aid = int(data.split(":")[1])
         conn = db()
-        conn.execute("DELETE FROM admins WHERE telegram_id=?", (aid,))
-        conn.commit()
-        conn.close()
-        bot.answer_callback_query(call.id, "✅")
+        conn.execute("DELETE FROM admins WHERE telegram_id=?", (int(data.split(":")[1]),))
+        conn.commit(); conn.close()
 
     elif data == "adm_msgs":
         conn = db()
         msgs = conn.execute("SELECT * FROM support_messages WHERE status='open' ORDER BY created_at DESC LIMIT 10").fetchall()
         conn.close()
         text = "📋 <b>Xabarlar</b>\n\n"
-        if not msgs:
-            text += "Yo'q"
-        else:
-            for m in msgs:
-                text += f"#{m['id']}: {m['message'][:40]}\n"
+        if msgs:
+            for m in msgs: text += f"#{m['id']}: {m['message'][:40]}\n"
+        else: text += "Yo'q"
         kb = InlineKeyboardMarkup().add(InlineKeyboardButton("🔙", callback_data="adm_back"))
         bot.edit_message_text(text, uid, call.message.message_id, reply_markup=kb)
 
     elif data == "adm_ads":
-        text = (f"📢 <b>Reklama</b>\n\n"
-                f"Holat: {'✅' if get_setting('monetag_enabled')=='1' else '❌'}\n"
-                f"Bepul QR: {get_setting('free_qr_count')}\n"
-                f"Har N QR da: {get_setting('qr_per_ad')}\n"
-                f"Referal bonus: +{get_setting('invite_bonus_qr')} QR")
+        text = (f"📢 <b>Reklama</b>\n\nBepul QR: {gs('free_qr_count')}\n"
+                f"Har N QR da: {gs('qr_per_ad')}\nReferal bonus: +{gs('invite_bonus_qr')}")
         kb = InlineKeyboardMarkup(row_width=2)
-        kb.add(
-            InlineKeyboardButton("🧩 Bepul", callback_data="adm_set:free_qr_count"),
-            InlineKeyboardButton("📢 Har N", callback_data="adm_set:qr_per_ad"))
-        kb.add(InlineKeyboardButton("🎁 Referal bonus", callback_data="adm_set:invite_bonus_qr"))
+        kb.add(InlineKeyboardButton("🧩 Bepul", callback_data="adm_set:free_qr_count"),
+               InlineKeyboardButton("📢 Har N", callback_data="adm_set:qr_per_ad"))
+        kb.add(InlineKeyboardButton("🎁 Referal", callback_data="adm_set:invite_bonus_qr"))
         kb.add(InlineKeyboardButton("🔙", callback_data="adm_back"))
         bot.edit_message_text(text, uid, call.message.message_id, reply_markup=kb)
 
     elif data.startswith("adm_set:"):
         key = data.split(":")[1]
-        msg = bot.send_message(uid, f"<b>{key}</b> uchun yangi qiymat:")
+        msg = bot.send_message(uid, f"<b>{key}</b> yangi qiymat:")
         bot.register_next_step_handler(msg, set_val, key)
 
     elif data == "adm_back":
-        bot.delete_message(uid, call.message.message_id)
-        admin_menu(uid)
+        bot.delete_message(uid, call.message.message_id); admin_menu(uid)
 
     elif data.startswith("reply:"):
         mid = int(data.split(":")[1])
@@ -796,86 +692,58 @@ def cb(call):
 
 def show_subs_menu(uid, msg_id):
     channels = get_all_channels()
-    enabled = get_setting("force_sub_enabled") == "1"
-    text = f"🔒 <b>Majburiy obuna</b>\n\n"
-    text += f"Holat: {'✅ Yoqilgan' if enabled else '❌ O\'chirilgan'}\n\n"
-    if channels:
-        text += "<b>Kanallar:</b>\n"
-        for i, ch in enumerate(channels, 1):
-            mode = "📢 Ommaviy" if ch["check_mode"] == "member" else "📨 So'rov"
-            text += f"{i}. {ch['name']} ({mode})\n"
-            text += f"   <code>{ch['chat_id']}</code>\n"
-    else:
-        text += "Kanallar yo'q\n"
+    enabled = gs("force_sub_enabled") == "1"
+    text = f"🔒 <b>Obuna</b>: {'✅' if enabled else '❌'}\n\n"
+    for i, ch in enumerate(channels, 1):
+        mode = "📢" if ch["check_mode"] == "member" else "📨"
+        text += f"{i}. {ch['name']} {mode}\n   <code>{ch['chat_id']}</code>\n"
+    if not channels: text += "Kanallar yo'q\n"
     kb = InlineKeyboardMarkup(row_width=1)
-    kb.add(InlineKeyboardButton("➕ Kanal qo'shish", callback_data="adm_add_ch"))
-    kb.add(InlineKeyboardButton(
-        f"{'🔴 O\'chirish' if enabled else '🟢 Yoqish'}",
-        callback_data="adm_tog_sub"))
+    kb.add(InlineKeyboardButton("➕ Qo'shish", callback_data="adm_add_ch"))
+    kb.add(InlineKeyboardButton(f"{'🔴 O\'chirish' if enabled else '🟢 Yoqish'}", callback_data="adm_tog_sub"))
     for ch in channels:
-        kb.add(InlineKeyboardButton(f"🗑 {ch['name']}",
-                                    callback_data=f"adm_del_ch:{ch['id']}"))
+        kb.add(InlineKeyboardButton(f"🗑 {ch['name']}", callback_data=f"adm_del_ch:{ch['id']}"))
     kb.add(InlineKeyboardButton("🔙", callback_data="adm_back"))
-    try:
-        bot.edit_message_text(text, uid, msg_id, reply_markup=kb)
-    except:
-        bot.send_message(uid, text, reply_markup=kb)
+    try: bot.edit_message_text(text, uid, msg_id, reply_markup=kb)
+    except: bot.send_message(uid, text, reply_markup=kb)
 
 
 def add_ch_step(message):
     try:
         parts = message.text.split("|")
-        if len(parts) < 3:
-            raise ValueError("Format: @username|Nomi|member")
-        raw_id = parts[0].strip()
-        name = parts[1].strip()
-        mode = parts[2].strip().lower()
-        if mode not in ("member", "request"):
-            mode = "member"
-        username = None
-        invite_link = None
-        chat_id = raw_id
-        if raw_id.startswith("@"):
-            username = raw_id
+        if len(parts) < 3: raise ValueError("Format: @username|Nomi|member")
+        raw = parts[0].strip(); name = parts[1].strip(); mode = parts[2].strip().lower()
+        if mode not in ("member", "request"): mode = "member"
+        username = invite_link = None
+        chat_id = raw
+        if raw.startswith("@"):
+            username = raw
+            try: chat_id = str(bot.get_chat(raw).id)
+            except Exception as e: bot.send_message(message.chat.id, f"⚠️ {e}")
+            invite_link = f"https://t.me/{raw.replace('@','')}"
+        elif raw.startswith("https://t.me/+"):
+            invite_link = raw
             try:
-                chat = bot.get_chat(raw_id)
-                chat_id = str(chat.id)
-            except Exception as e:
-                bot.send_message(message.chat.id, f"⚠️ Botni admin qiling!\n<code>{e}</code>")
-            invite_link = f"https://t.me/{raw_id.replace('@', '')}"
-        elif raw_id.startswith("https://t.me/+"):
-            invite_link = raw_id
-            try:
-                chat = bot.get_chat(raw_id)
-                chat_id = str(chat.id)
-                username = chat.username
-            except Exception as e:
-                bot.send_message(message.chat.id, f"⚠️ Invite xato!\n<code>{e}</code>")
+                chat = bot.get_chat(raw); chat_id = str(chat.id); username = chat.username
+            except Exception as e: bot.send_message(message.chat.id, f"⚠️ {e}")
         else:
-            chat_id = raw_id
             try:
-                chat = bot.get_chat(raw_id)
-                username = chat.username
-                invite_link = chat.invite_link
+                chat = bot.get_chat(raw); username = chat.username; invite_link = chat.invite_link
             except: pass
         conn = db()
         conn.execute("""INSERT INTO channels(chat_id,name,username,invite_link,check_mode)
-            VALUES(?,?,?,?,?)""",
-            (str(chat_id), name, username, invite_link, mode))
-        conn.commit()
-        conn.close()
-        bot.send_message(message.chat.id,
-            f"✅ Qo'shildi!\n\n📌 <b>{name}</b>\n🆔 <code>{chat_id}</code>\n🔧 {mode}")
+            VALUES(?,?,?,?,?)""", (str(chat_id), name, username, invite_link, mode))
+        conn.commit(); conn.close()
+        bot.send_message(message.chat.id, f"✅ Qo'shildi!\n📌 {name}\n🆔 <code>{chat_id}</code>\n🔧 {mode}")
     except Exception as e:
         bot.send_message(message.chat.id, f"❌ {e}")
 
 
 def bc_ok(message):
-    if message.content_type != "text":
-        bot.reply_to(message, "❌"); return
+    if message.content_type != "text": bot.reply_to(message, "❌"); return
     bot._bc_text = message.text
     kb = InlineKeyboardMarkup()
-    kb.add(InlineKeyboardButton("✅ Yuborish", callback_data="adm_bc_ok"),
+    kb.add(InlineKeyboardButton("✅", callback_data="adm_bc_ok"),
            InlineKeyboardButton("❌", callback_data="adm_back"))
     bot.send_message(message.chat.id, f"📣 {message.text}\n\n<b>Tasdiq?</b>", reply_markup=kb)
 
@@ -886,26 +754,20 @@ def add_adm(message):
         conn = db()
         conn.execute("INSERT OR IGNORE INTO admins(telegram_id,added_by,created_at) VALUES(?,?,?)",
                      (aid, message.from_user.id, datetime.utcnow().isoformat()))
-        conn.commit()
-        conn.close()
-        bot.send_message(message.chat.id, f"✅ Admin: {aid}")
+        conn.commit(); conn.close()
+        bot.send_message(message.chat.id, f"✅ {aid}")
         try: bot.send_message(aid, "🎉 Siz admin!")
         except: pass
-    except:
-        bot.send_message(message.chat.id, "❌ Raqam")
+    except: bot.send_message(message.chat.id, "❌")
 
 
 def set_val(message, key):
-    try:
-        set_setting(key, str(int(message.text.strip())))
-        bot.send_message(message.chat.id, f"✅ {key} = {message.text.strip()}")
-    except:
-        bot.send_message(message.chat.id, "❌ Raqam")
+    try: ss(key, str(int(message.text.strip()))); bot.send_message(message.chat.id, "✅")
+    except: bot.send_message(message.chat.id, "❌")
 
 
 def send_reply(message, mid):
-    if message.content_type != "text":
-        bot.reply_to(message, "❌"); return
+    if message.content_type != "text": bot.reply_to(message, "❌"); return
     conn = db()
     r = conn.execute("SELECT user_id FROM support_messages WHERE id=?", (mid,)).fetchone()
     if r:
@@ -920,50 +782,38 @@ def send_reply(message, mid):
 
 
 @bot.chat_join_request_handler(func=lambda r: True)
-def join_request_handler(req):
+def join_req(req):
     uid = req.from_user.id
-    uname = req.from_user.username or "—"
-    name = req.from_user.full_name
     conn = db()
-    conn.execute("""INSERT OR REPLACE INTO pending_subs(user_id,channel_id,requested_at)
-        VALUES(?,?,?)""",
-        (uid, str(req.chat.id), datetime.utcnow().isoformat()))
-    conn.commit()
-    conn.close()
-    for admin_id in ADMIN_IDS:
+    conn.execute("INSERT OR REPLACE INTO pending_subs(user_id,channel_id,requested_at) VALUES(?,?,?)",
+                 (uid, str(req.chat.id), datetime.utcnow().isoformat()))
+    conn.commit(); conn.close()
+    for aid in ADMIN_IDS:
         try:
             kb = InlineKeyboardMarkup()
-            kb.add(
-                InlineKeyboardButton("✅ Tasdiqlash", callback_data=f"jr_ok:{req.chat.id}:{uid}"),
-                InlineKeyboardButton("❌ Rad etish", callback_data=f"jr_no:{req.chat.id}:{uid}"),
-            )
-            bot.send_message(admin_id,
-                f"📨 <b>Yangi so'rov</b>\n\n👤 {name} (@{uname})\n🆔 <code>{uid}</code>\n📢 <b>{req.chat.title}</b>",
-                reply_markup=kb)
+            kb.add(InlineKeyboardButton("✅", callback_data=f"jr_ok:{req.chat.id}:{uid}"),
+                   InlineKeyboardButton("❌", callback_data=f"jr_no:{req.chat.id}:{uid}"))
+            bot.send_message(aid,
+                f"📨 <b>So'rov</b>\n👤 {req.from_user.full_name} (@{req.from_user.username or '—'})\n"
+                f"🆔 <code>{uid}</code>\n📢 {req.chat.title}", reply_markup=kb)
         except: pass
 
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("jr_"))
-def join_req_action(call):
-    if call.from_user.id not in ADMIN_IDS:
-        bot.answer_callback_query(call.id, "🚫")
-        return
+def jr_action(call):
+    if call.from_user.id not in ADMIN_IDS: return
     parts = call.data.split(":")
-    action = parts[0]
-    chat_id = int(parts[1])
-    user_id = int(parts[2])
     try:
-        if action == "jr_ok":
-            bot.approve_chat_join_request(chat_id, user_id)
-            bot.answer_callback_query(call.id, "✅ Tasdiqlandi")
-            try: bot.send_message(user_id, "✅ So'rovingiz tasdiqlandi!")
+        if parts[0] == "jr_ok":
+            bot.approve_chat_join_request(int(parts[1]), int(parts[2]))
+            bot.answer_callback_query(call.id, "✅")
+            try: bot.send_message(int(parts[2]), "✅ So'rovingiz tasdiqlandi!")
             except: pass
         else:
-            bot.decline_chat_join_request(chat_id, user_id)
-            bot.answer_callback_query(call.id, "❌ Rad etildi")
+            bot.decline_chat_join_request(int(parts[1]), int(parts[2]))
+            bot.answer_callback_query(call.id, "❌")
         bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=None)
-    except Exception as e:
-        bot.answer_callback_query(call.id, f"❌ {e}", show_alert=True)
+    except Exception as e: bot.answer_callback_query(call.id, f"❌ {e}", show_alert=True)
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -998,10 +848,8 @@ def validate_init(init_data):
 def auth(f):
     @wraps(f)
     def w(*a, **k):
-        try:
-            tg = validate_init(request.headers.get("X-Telegram-Init-Data", ""))
-        except ValueError as e:
-            return jsonify({"detail": str(e)}), 401
+        try: tg = validate_init(request.headers.get("X-Telegram-Init-Data", ""))
+        except ValueError as e: return jsonify({"detail": str(e)}), 401
         if not check_subscription(tg["id"]):
             return jsonify({"detail": "Obuna kerak", "need_sub": True}), 403
         return f(tg, *a, **k)
@@ -1060,7 +908,7 @@ border:1.5px solid transparent;border-radius:14px;font-size:15px;color:var(--fg)
 .btn-ghost{background:var(--card);color:var(--fg)}
 .btn-warn{background:linear-gradient(135deg,#f59e0b,#ef4444);color:#fff}
 .qr-result{margin-top:20px;padding:20px;border-radius:var(--radius);background:var(--card);text-align:center}
-.qr-result img,.qr-result canvas{border-radius:12px;max-width:100%;height:auto}
+.qr-result canvas{border-radius:12px;max-width:100%;height:auto}
 .qr-actions{display:flex;gap:8px;margin-top:14px}
 .qr-actions .btn{padding:12px;font-size:13px}
 .toast-wrap{position:fixed;top:80px;left:50%;transform:translateX(-50%);z-index:1000;
@@ -1096,7 +944,7 @@ border-radius:14px;border:2px dashed var(--border);cursor:pointer;margin-bottom:
 .error-page{padding:60px 20px;text-align:center}
 .error-page .icon{font-size:64px;margin-bottom:20px}
 .error-page h2{color:var(--primary);margin-bottom:10px}
-.error-page p{color:var(--muted);margin-bottom:20px}
+.error-page p{color:var(--muted);margin-bottom:20px;line-height:1.6}
 </style>
 </head>
 <body>
@@ -1120,7 +968,7 @@ border-radius:14px;border:2px dashed var(--border);cursor:pointer;margin-bottom:
     <div id="dynamicFields"></div>
     <div class="section-title">🎨 Dizayn</div>
     <div class="field"><label>QR rangi</label>
-      <input type="color" id="fillColor" value="#0f172a" style="width:100%;height:50px;border:none;border-radius:12px"></div>
+      <input type="color" id="fillColor" value="#6366f1" style="width:100%;height:50px;border:none;border-radius:12px"></div>
     <div class="field"><label>Fon rangi</label>
       <input type="color" id="backColor" value="#ffffff" style="width:100%;height:50px;border:none;border-radius:12px"></div>
     <div class="field"><label>📷 Logo (ixtiyoriy)</label>
@@ -1157,7 +1005,7 @@ border-radius:14px;border:2px dashed var(--border);cursor:pointer;margin-bottom:
     <div class="hist-item">
       <div class="hist-info">
         <h4>Bepul limit</h4>
-        <p id="freeCount">5 ta</p>
+        <p id="freeCount">1 ta</p>
       </div>
     </div>
     <div class="hist-item">
@@ -1317,7 +1165,7 @@ const App = {
     document.getElementById('statAds').textContent = this.me.ad_count || 0;
     document.getElementById('statUnlock').textContent = this.me.unlock_count || 0;
     document.getElementById('statRef').textContent = this.me.referrals || 0;
-    document.getElementById('freeCount').textContent = (this.me.free_qr || 5) + ' ta';
+    document.getElementById('freeCount').textContent = (this.me.free_qr || 1) + ' ta';
     document.getElementById('unlockCount').textContent = (this.me.unlock_count || 0) + ' ta';
     document.getElementById('adsTotal').textContent = this.me.ad_count || 0;
   },
@@ -1430,13 +1278,21 @@ const App = {
       this.showLoading(true);
       const c = document.getElementById('qrContainer');
       c.innerHTML = '';
+
+      const wrapper = document.createElement('div');
+      wrapper.style.cssText = 'display:inline-block;padding:24px;background:linear-gradient(135deg,' + fill + '11,' + fill + '22);border-radius:24px;box-shadow:0 15px 40px rgba(99,102,241,.25);border:1px solid ' + fill + '22;';
+      c.appendChild(wrapper);
+
       const qrDiv = document.createElement('div');
-      c.appendChild(qrDiv);
+      qrDiv.style.cssText = 'padding:14px;background:' + back + ';border-radius:16px;box-shadow:0 4px 12px rgba(0,0,0,.08);';
+      wrapper.appendChild(qrDiv);
+
       new QRCode(qrDiv, {
         text: data, width: size, height: size,
         colorDark: fill, colorLight: back,
         correctLevel: QRCode.CorrectLevel.H
       });
+
       if (this.logoData) {
         setTimeout(() => {
           const canvas = qrDiv.querySelector('canvas');
@@ -1449,13 +1305,28 @@ const App = {
             const pad = s * 0.015;
             const x = (s - logoSize) / 2;
             const y = (s - logoSize) / 2;
+            ctx.save();
+            ctx.beginPath();
+            const r = pad * 2;
+            ctx.moveTo(x - pad + r, y - pad);
+            ctx.lineTo(x + logoSize + pad - r, y - pad);
+            ctx.quadraticCurveTo(x + logoSize + pad, y - pad, x + logoSize + pad, y - pad + r);
+            ctx.lineTo(x + logoSize + pad, y + logoSize + pad - r);
+            ctx.quadraticCurveTo(x + logoSize + pad, y + logoSize + pad, x + logoSize + pad - r, y + logoSize + pad);
+            ctx.lineTo(x - pad + r, y + logoSize + pad);
+            ctx.quadraticCurveTo(x - pad, y + logoSize + pad, x - pad, y + logoSize + pad - r);
+            ctx.lineTo(x - pad, y - pad + r);
+            ctx.quadraticCurveTo(x - pad, y - pad, x - pad + r, y - pad);
+            ctx.closePath();
             ctx.fillStyle = '#ffffff';
-            ctx.fillRect(x - pad, y - pad, logoSize + pad*2, logoSize + pad*2);
+            ctx.fill();
+            ctx.restore();
             ctx.drawImage(img, x, y, logoSize, logoSize);
           };
           img.src = this.logoData;
         }, 100);
       }
+
       this.currentData = data;
       document.getElementById('qrResult').style.display = 'block';
       document.getElementById('qrResult').scrollIntoView({ behavior: 'smooth' });
@@ -1486,7 +1357,7 @@ const App = {
         name: this.types.find(t => t.id === this.currentType)?.label || 'QR',
         data: this.currentData
       });
-      this.toast('✅ Saqlandi! Botda "📜 Mening QR larim" da ko\'ring', 'success');
+      this.toast('✅ Saqlandi! Botga xabar yuborildi', 'success');
       if (this.me) {
         this.me.qr_count = res.total_qr;
         this.updateStats();
@@ -1726,8 +1597,8 @@ def api_me():
         "is_admin": is_admin(tg["id"]),
         "referrals": count_refs(tg["id"]),
         "bot_username": BOT_USERNAME,
-        "free_qr": get_setting("free_qr_count"),
-        "qr_per_ad": get_setting("qr_per_ad"),
+        "free_qr": gs("free_qr_count"),
+        "qr_per_ad": gs("qr_per_ad"),
         "need_sub": need_sub,
     })
 
@@ -1739,19 +1610,44 @@ def api_create_qr(tg):
     data = (body.get("data") or "").strip()
     if not data: return jsonify({"detail": "Bo'sh"}), 400
     if len(data) > 5000: return jsonify({"detail": "Uzun"}), 400
+
     upsert_user(tg)
-    add_qr(tg["id"], body.get("qr_type") or "universal",
-           (body.get("name") or "QR")[:255], data)
+    qr_type = body.get("qr_type") or "universal"
+    name = (body.get("name") or "QR")[:255]
+    add_qr(tg["id"], qr_type, name, data)
+
     u = get_user(tg["id"])
     total = u["qr_count"]
-    free = int(get_setting("free_qr_count", "5"))
+    free = int(gs("free_qr_count", "1"))
     unlock = u.get("unlock_count", 0)
-    per_ad = int(get_setting("qr_per_ad", "3"))
+    per_ad = int(gs("qr_per_ad", "3"))
     limit = free + unlock
+
     show_ad = False
-    if total > limit and per_ad > 0:
+    if per_ad > 0 and total > limit:
         if (total - limit) % per_ad == 0:
             show_ad = True
+
+    # ═══ BOTGA XABAR ═══
+    try:
+        kb = InlineKeyboardMarkup()
+        kb.add(InlineKeyboardButton("📜 Mening QR larim",
+                web_app=WebAppInfo(url=WEBAPP_URL)))
+        if show_ad:
+            kb.add(InlineKeyboardButton("🎬 Reklama ko'rish (+3 QR)",
+                    web_app=WebAppInfo(url=WEBAPP_URL)))
+
+        text = (f"✅ <b>Yangi QR kod saqlandi!</b>\n\n"
+                f"📌 <b>{name}</b>\n"
+                f"🔧 Turi: <code>{qr_type}</code>\n"
+                f"📊 Jami: <b>{total}</b> ta\n")
+        if show_ad:
+            text += f"\n🎬 <b>Bepul limit tugadi!</b>\nReklama ko'rib +3 QR unlock oling."
+
+        bot.send_message(tg["id"], text, reply_markup=kb)
+    except Exception as e:
+        print(f"⚠️ Bot xabar: {e}")
+
     return jsonify({"ok": True, "total_qr": total, "limit": limit,
                     "unlock": unlock, "show_ad": show_ad})
 
@@ -1763,9 +1659,8 @@ def api_ad_done(tg):
     conn.execute("INSERT INTO ad_events(user_id,format,event_type,created_at) VALUES(?,?,?,?)",
                  (tg["id"], "rewarded", "completed", datetime.utcnow().isoformat()))
     conn.execute("UPDATE users SET ad_count=ad_count+1, unlock_count=unlock_count+? WHERE telegram_id=?",
-                 (int(get_setting("qr_per_ad", "3")), tg["id"]))
-    conn.commit()
-    conn.close()
+                 (int(gs("qr_per_ad", "3")), tg["id"]))
+    conn.commit(); conn.close()
     u = get_user(tg["id"])
     return jsonify({"ok": True, "unlock": u.get("unlock_count", 0), "ad_count": u["ad_count"]})
 
@@ -1781,8 +1676,7 @@ def api_history(tg):
 @app.route("/api/qr/<int:qr_id>", methods=["DELETE", "OPTIONS"])
 @auth
 def api_del_qr(tg, qr_id):
-    if del_qr(qr_id, tg["id"]):
-        return jsonify({"ok": True})
+    if del_qr(qr_id, tg["id"]): return jsonify({"ok": True})
     return jsonify({"detail": "Topilmadi"}), 404
 
 
@@ -1793,7 +1687,16 @@ def api_ref_list(tg):
                     "refs": get_refs(tg["id"], 50, 0)})
 
 
-# ═══════════════════════════════════════════════════════════════
+@app.route("/files/<path:fname>")
+def serve_file(fname):
+    if "/" in fname or ".." in fname:
+        return jsonify({"detail": "Xato"}), 400
+    try:
+        return send_from_directory(UPLOAD_DIR, fname)
+    except Exception:
+        return jsonify({"detail": "Topilmadi"}), 404
+
+
 def run_bot():
     while True:
         try:
@@ -1803,11 +1706,9 @@ def run_bot():
             bot.infinity_polling(skip_pending=True, timeout=30,
                                  allowed_updates=['message', 'callback_query',
                                                   'chat_join_request'])
-        except KeyboardInterrupt:
-            break
+        except KeyboardInterrupt: break
         except Exception as e:
-            print(f"⚠️ Bot: {e}")
-            time.sleep(5)
+            print(f"⚠️ Bot: {e}"); time.sleep(5)
 
 
 if __name__ == "__main__":
