@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-QR MASTER — Hamma narsa BITTA faylda
+QR MASTER — TO'LIQ BITTA FAYL
 Ishga tushirish: python bot.py
+Telegram bot + Flask backend + Mini App HTML + Admin panel
 """
 import os, sys, hmac, hashlib, json, threading, time, sqlite3, io, base64
 from datetime import datetime
@@ -9,23 +10,30 @@ from functools import wraps
 from urllib.parse import parse_qsl
 
 
-# ═══════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
 # AVTOMATIK KUTUBXONA O'RNATISH
-# ═══════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
 def ensure_pkgs():
-    pkgs = {"telebot": "pyTelegramBotAPI", "flask": "Flask",
-            "flask_cors": "Flask-Cors", "qrcode": "qrcode[pil]", "PIL": "Pillow"}
+    pkgs = {
+        "telebot": "pyTelegramBotAPI",
+        "flask": "Flask",
+        "flask_cors": "Flask-Cors",
+        "qrcode": "qrcode[pil]",
+        "PIL": "Pillow"
+    }
     import importlib
     missing = []
     for mod, pkg in pkgs.items():
-        try: importlib.import_module(mod)
-        except ImportError: missing.append(pkg)
+        try:
+            importlib.import_module(mod)
+        except ImportError:
+            missing.append(pkg)
     if missing:
         import subprocess
         print(f"📦 O'rnatilmoqda: {', '.join(missing)}")
         for pkg in missing:
             subprocess.check_call([sys.executable, "-m", "pip", "install", pkg])
-        print("✅ Qayta ishga tushirish...")
+        print("✅ O'rnatildi! Qayta ishga tushirish...")
         time.sleep(2)
         os.execv(sys.executable, [sys.executable] + sys.argv)
 
@@ -37,15 +45,18 @@ from flask_cors import CORS
 import telebot
 from telebot.types import (
     InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo,
-    ReplyKeyboardMarkup, KeyboardButton, BotCommand, InputFile
+    ReplyKeyboardMarkup, KeyboardButton, BotCommand, InputFile,
+    MenuButtonWebApp, ChatMemberLeft, ChatMemberBanned,
+    ChatMemberMember, ChatMemberAdministrator, ChatMemberOwner,
+    ChatMemberRestricted
 )
 import qrcode
 from PIL import Image
 
 
-# ═══════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
 # SOZLAMALAR
-# ═══════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
 BOT_TOKEN    = os.getenv("BOT_TOKEN", "8894647397:AAHpIC0PyVsjQ_XgDZOZGAVdOemN9YSBnMA")
 BOT_USERNAME = ""  # Avtomatik olinadi
 WEBAPP_URL   = os.getenv("WEBAPP_URL", "http://localhost:8000")
@@ -53,12 +64,12 @@ ADMIN_IDS    = [int(x) for x in os.getenv("ADMIN_IDS", "8261542613").split(",")]
 MONETAG_ZONE = os.getenv("MONETAG_ZONE", "11990967")
 PORT         = int(os.getenv("PORT", 8000))
 DB_FILE      = os.getenv("DB_FILE", "qr_master.db")
-# ═══════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
 
 
-# ═══════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
 # DATABASE
-# ═══════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
 def db_init():
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
@@ -87,19 +98,25 @@ def db_init():
         event_type TEXT, created_at TEXT)""")
     c.execute("""CREATE TABLE IF NOT EXISTS admins(
         telegram_id INTEGER PRIMARY KEY, added_by INTEGER, created_at TEXT)""")
+    c.execute("""CREATE TABLE IF NOT EXISTS pending_subs(
+        user_id INTEGER, channel_id INTEGER, requested_at TEXT,
+        PRIMARY KEY(user_id, channel_id))""")
 
     defaults = {
-        "force_sub_enabled": "0", "referral_enabled": "1",
+        "force_sub_enabled": "1", "referral_enabled": "1",
         "monetag_enabled": "1", "free_qr_count": "5",
         "qr_per_ad": "3", "invite_bonus_qr": "10",
     }
     for k, v in defaults.items():
         c.execute("INSERT OR IGNORE INTO settings(key,value) VALUES(?,?)", (k, v))
-    conn.commit(); conn.close()
+    conn.commit()
+    conn.close()
 
 
 def db():
-    conn = sqlite3.connect(DB_FILE); conn.row_factory = sqlite3.Row; return conn
+    conn = sqlite3.connect(DB_FILE)
+    conn.row_factory = sqlite3.Row
+    return conn
 
 
 def get_setting(key, default=""):
@@ -112,7 +129,8 @@ def get_setting(key, default=""):
 def set_setting(key, value):
     conn = db()
     conn.execute("INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)", (key, str(value)))
-    conn.commit(); conn.close()
+    conn.commit()
+    conn.close()
 
 
 def is_admin(uid):
@@ -145,7 +163,8 @@ def upsert_user(tg):
             last_active=? WHERE telegram_id=?""",
             (tg.get("username"), tg.get("first_name"), tg.get("last_name"), now, tg["id"]))
         is_new = False
-    conn.commit(); conn.close()
+    conn.commit()
+    conn.close()
     return is_new
 
 
@@ -157,7 +176,8 @@ def add_qr(user_id, qr_type, name, qr_data):
          hashlib.sha256(qr_data.encode()).hexdigest(),
          datetime.utcnow().isoformat()))
     conn.execute("UPDATE users SET qr_count=qr_count+1 WHERE telegram_id=?", (user_id,))
-    conn.commit(); conn.close()
+    conn.commit()
+    conn.close()
 
 
 def get_qrs(user_id, limit=50, offset=0):
@@ -184,7 +204,8 @@ def del_qr(qr_id, user_id):
         conn.execute("DELETE FROM qr_history WHERE id=?", (qr_id,))
         conn.execute("UPDATE users SET qr_count=MAX(0,qr_count-1) WHERE telegram_id=?",
                      (user_id,))
-        conn.commit(); conn.close()
+        conn.commit()
+        conn.close()
         return True
     conn.close()
     return False
@@ -198,7 +219,8 @@ def add_ref(referrer, referred):
                      (referrer, referred, datetime.utcnow().isoformat()))
         conn.execute("UPDATE users SET unlock_count=unlock_count+? WHERE telegram_id=?",
                      (int(get_setting("invite_bonus_qr", "10")), referrer))
-        conn.commit(); return True
+        conn.commit()
+        return True
     except sqlite3.IntegrityError:
         return False
     finally:
@@ -224,60 +246,140 @@ def get_refs(user_id, limit=50, offset=0):
 
 def get_channels():
     conn = db()
-    rows = conn.execute("SELECT * FROM channels WHERE is_active=1").fetchall()
+    rows = conn.execute("SELECT * FROM channels WHERE is_active=1 ORDER BY id").fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+
+def get_all_channels():
+    conn = db()
+    rows = conn.execute("SELECT * FROM channels ORDER BY id").fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def save_pending(user_id, channel_id):
+    conn = db()
+    conn.execute("INSERT OR REPLACE INTO pending_subs(user_id,channel_id,requested_at) VALUES(?,?,?)",
+                 (user_id, channel_id, datetime.utcnow().isoformat()))
+    conn.commit()
+    conn.close()
+
+
+def has_pending(user_id, channel_id):
+    conn = db()
+    r = conn.execute("SELECT 1 FROM pending_subs WHERE user_id=? AND channel_id=?",
+                     (user_id, channel_id)).fetchone()
+    conn.close()
+    return bool(r)
 
 
 def make_qr_png(data):
     qr = qrcode.QRCode(box_size=10, border=4,
                        error_correction=qrcode.constants.ERROR_CORRECT_H)
-    qr.add_data(data); qr.make(fit=True)
+    qr.add_data(data)
+    qr.make(fit=True)
     img = qr.make_image(fill_color="black", back_color="white").convert("RGB")
-    bio = io.BytesIO(); img.save(bio, "PNG"); bio.seek(0)
+    bio = io.BytesIO()
+    img.save(bio, "PNG")
+    bio.seek(0)
     return bio
 
 
 db_init()
 
 
-# ═══════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
 # BOT
-# ═══════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
 bot = telebot.TeleBot(BOT_TOKEN, parse_mode="HTML")
 
 
-def get_bot_username():
+def setup_bot():
     global BOT_USERNAME
     try:
         me = bot.get_me()
         BOT_USERNAME = me.username
-        print(f"✅ Bot username: @{BOT_USERNAME}")
-    except Exception as e:
-        print(f"⚠️ Username olib bo'lmadi: {e}")
-        BOT_USERNAME = "SizningBotUsername"
-
-
-def check_sub(uid):
-    if get_setting("force_sub_enabled") != "1": return True
-    for ch in get_channels():
+        print(f"✅ Bot: @{BOT_USERNAME}")
         try:
-            m = bot.get_chat_member(ch["chat_id"], uid)
-            if m.status in ("left", "kicked"): return False
-        except: pass
+            bot.set_chat_menu_button(
+                menu_button=MenuButtonWebApp(
+                    text="🚀 QR Master",
+                    web_app=WebAppInfo(url=WEBAPP_URL)
+                )
+            )
+            print(f"✅ Menu button: {WEBAPP_URL}")
+        except Exception as e:
+            print(f"⚠️ Menu button: {e}")
+        bot.set_my_commands([
+            BotCommand("start", "Bosh menyu"),
+            BotCommand("help", "Yordam"),
+            BotCommand("id", "Telegram ID"),
+        ])
+    except Exception as e:
+        print(f"⚠️ Setup: {e}")
+
+
+def check_member_status(chat_id, user_id):
+    try:
+        member = bot.get_chat_member(chat_id, user_id)
+        if isinstance(member, (ChatMemberLeft, ChatMemberBanned)):
+            return False
+        if isinstance(member, (ChatMemberMember, ChatMemberAdministrator, ChatMemberOwner)):
+            return True
+        if isinstance(member, ChatMemberRestricted):
+            return member.is_member
+        return False
+    except Exception as e:
+        print(f"⚠️ check_member({chat_id}, {user_id}): {e}")
+        return None
+
+
+def check_subscription(uid):
+    if is_admin(uid):
+        return True
+    if get_setting("force_sub_enabled") != "1":
+        return True
+    channels = get_channels()
+    if not channels:
+        return True
+    for ch in channels:
+        status = check_member_status(ch["chat_id"], uid)
+        if status is True:
+            continue
+        if status is False:
+            return False
+        if ch["check_mode"] == "request":
+            if has_pending(uid, ch["id"]):
+                continue
+            return False
+        continue
     return True
 
 
-def sub_prompt(chat_id):
+def sub_prompt(chat_id, uid):
     channels = get_channels()
     if not channels: return
-    text = "🔒 <b>Obuna bo'ling:</b>\n\n"
+    text = "🔒 <b>Botdan foydalanish uchun quyidagi kanallarga a'zo bo'ling:</b>\n\n"
     kb = InlineKeyboardMarkup()
     for i, ch in enumerate(channels, 1):
-        text += f"{i}. <b>{ch['name']}</b>\n"
-        link = ch["invite_link"] or f"https://t.me/{ch['username']}"
-        if link: kb.add(InlineKeyboardButton(f"📢 {ch['name']}", url=link))
-    kb.add(InlineKeyboardButton("✅ Tekshirish", callback_data="check_sub"))
+        status = check_member_status(ch["chat_id"], uid)
+        if status is True:
+            icon = "✅"
+        elif ch["check_mode"] == "request" and has_pending(uid, ch["id"]):
+            icon = "⏳"
+        else:
+            icon = "❌"
+        text += f"{icon} {i}. <b>{ch['name']}</b>\n"
+        if status is True:
+            continue
+        if ch["username"]:
+            uname = ch["username"].replace("@", "")
+            kb.add(InlineKeyboardButton(f"📢 {ch['name']}", url=f"https://t.me/{uname}"))
+        elif ch["invite_link"]:
+            btn_text = "📨 So'rov yuborish" if ch["check_mode"] == "request" else f"📢 {ch['name']}"
+            kb.add(InlineKeyboardButton(btn_text, url=ch["invite_link"]))
+    kb.add(InlineKeyboardButton("✅ Obunani tekshirish", callback_data="check_sub"))
     bot.send_message(chat_id, text, reply_markup=kb)
 
 
@@ -285,7 +387,7 @@ def reply_kb():
     kb = ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
     kb.add(
         KeyboardButton("🧩 QR kod yaratish", web_app=WebAppInfo(url=WEBAPP_URL)),
-        KeyboardButton("🎬 Reklama / Unlock", web_app=WebAppInfo(url=WEBAPP_URL + "#ads")),
+        KeyboardButton("🎬 Reklama / Unlock", web_app=WebAppInfo(url=WEBAPP_URL)),
     )
     kb.add(
         KeyboardButton("📜 Mening QR larim"),
@@ -305,7 +407,6 @@ def cmd_start(m):
         "id": uid, "username": m.from_user.username,
         "first_name": m.from_user.first_name, "last_name": m.from_user.last_name,
         "language_code": m.from_user.language_code})
-
     args = m.text.split()
     if len(args) > 1 and args[1].startswith("ref_"):
         try:
@@ -314,10 +415,9 @@ def cmd_start(m):
                 try: bot.send_message(ref_id, "🎉 Yangi referal! +10 bonus QR")
                 except: pass
         except: pass
-
-    if not check_sub(uid):
-        sub_prompt(m.chat.id); return
-
+    if not check_subscription(uid):
+        sub_prompt(m.chat.id, uid)
+        return
     u = get_user(uid)
     unlock = u.get("unlock_count", 0) if u else 0
     bot.send_message(m.chat.id,
@@ -327,7 +427,6 @@ def cmd_start(m):
         f"🔓 Qo'shimcha: <b>{unlock} ta</b>\n\n"
         "Kerakli bo'limni tanlang:",
         reply_markup=reply_kb())
-
     if is_admin(uid):
         bot.send_message(m.chat.id, "👑 Admin: /admin")
 
@@ -364,8 +463,9 @@ def cmd_id(m):
 
 @bot.message_handler(func=lambda m: m.text == "📜 Mening QR larim")
 def my_qrs(m):
-    if not check_sub(m.from_user.id):
-        sub_prompt(m.chat.id); return
+    if not check_subscription(m.from_user.id):
+        sub_prompt(m.chat.id, m.from_user.id)
+        return
     show_qrs(m.chat.id, m.from_user.id, 0)
 
 
@@ -377,27 +477,23 @@ def show_qrs(chat_id, uid, offset):
             reply_markup=InlineKeyboardMarkup().add(
                 InlineKeyboardButton("🚀 QR yaratish", web_app=WebAppInfo(url=WEBAPP_URL))))
         return
-
     qrs = get_qrs(uid, 5, offset)
     text = f"📜 <b>Sizning QR kodlaringiz</b> ({offset+1}-{offset+len(qrs)}/{total})\n\n"
     for i, q in enumerate(qrs, 1):
         text += f"{offset+i}. <b>{q['name']}</b>\n"
         text += f"   <code>{q['qr_data'][:40]}...</code>\n\n"
-
     kb = InlineKeyboardMarkup(row_width=4)
     for q in qrs:
         kb.add(
             InlineKeyboardButton(f"📥 #{q['id']}", callback_data=f"qr_dl:{q['id']}"),
             InlineKeyboardButton(f"🗑 #{q['id']}", callback_data=f"qr_del:{q['id']}")
         )
-
     nav = []
     if offset > 0:
         nav.append(InlineKeyboardButton("⬅️", callback_data=f"qr_pg:{offset-5}"))
     if offset + 5 < total:
         nav.append(InlineKeyboardButton("➡️", callback_data=f"qr_pg:{offset+5}"))
     if nav: kb.row(*nav)
-
     bot.send_message(chat_id, text, reply_markup=kb)
 
 
@@ -429,7 +525,6 @@ def show_refs(chat_id, uid, offset, msg_id=None):
         name = r.get("first_name") or "Foydalanuvchi"
         uname = f"@{r['username']}" if r.get("username") else "—"
         text += f"{offset+i}. {name} ({uname})\n"
-
     kb = InlineKeyboardMarkup()
     nav = []
     if offset > 0:
@@ -438,7 +533,6 @@ def show_refs(chat_id, uid, offset, msg_id=None):
     if offset + 10 < total:
         nav.append(InlineKeyboardButton("➡️", callback_data=f"ref_list:{offset+10}"))
     kb.row(*nav)
-
     if msg_id:
         bot.edit_message_text(text, chat_id, msg_id, reply_markup=kb)
     else:
@@ -474,7 +568,8 @@ def save_msg(message):
     conn.execute("INSERT INTO support_messages(user_id,message,created_at) VALUES(?,?,?)",
                  (uid, message.text, datetime.utcnow().isoformat()))
     mid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-    conn.commit(); conn.close()
+    conn.commit()
+    conn.close()
     bot.reply_to(message, "✅ Yuborildi!")
     for admin_id in ADMIN_IDS:
         try:
@@ -493,11 +588,28 @@ def cb(call):
     bot.answer_callback_query(call.id)
 
     if data == "check_sub":
-        if check_sub(uid):
-            bot.edit_message_text("✅ Tasdiqlandi!", uid, call.message.message_id)
+        if check_subscription(uid):
+            try:
+                bot.edit_message_text("✅ <b>Obuna tasdiqlandi!</b>",
+                    uid, call.message.message_id)
+            except: pass
             bot.send_message(uid, "🏠 Bosh menyu:", reply_markup=reply_kb())
         else:
-            bot.answer_callback_query(call.id, "❌ Obuna emas", show_alert=True)
+            marked = False
+            for ch in get_channels():
+                status = check_member_status(ch["chat_id"], uid)
+                if status is None and ch["check_mode"] == "request":
+                    save_pending(uid, ch["id"])
+                    marked = True
+            if marked:
+                bot.answer_callback_query(call.id,
+                    "⏳ So'rov qayd etildi! Tasdiq kutilmoqda.", show_alert=True)
+                if check_subscription(uid):
+                    bot.send_message(uid, "✅ Endi foydalanishingiz mumkin:",
+                        reply_markup=reply_kb())
+            else:
+                bot.answer_callback_query(call.id, "❌ Obuna emas!", show_alert=True)
+                sub_prompt(uid, uid)
 
     elif data == "copy_ref":
         bot.send_message(uid, f"<code>https://t.me/{BOT_USERNAME}?start=ref_{uid}</code>")
@@ -583,30 +695,36 @@ def cb(call):
         for u in users:
             try:
                 bot.send_message(u["telegram_id"], text)
-                sent += 1; time.sleep(0.05)
-            except: failed += 1
+                sent += 1
+                time.sleep(0.05)
+            except:
+                failed += 1
         bot.send_message(uid, f"✅ {sent} | ❌ {failed}")
 
     elif data == "adm_subs":
-        conn = db()
-        chans = conn.execute("SELECT * FROM channels").fetchall()
-        conn.close()
-        text = f"🔒 Holat: {'✅' if get_setting('force_sub_enabled')=='1' else '❌'}\n\n"
-        for ch in chans: text += f"• {ch['name']}\n"
-        kb = InlineKeyboardMarkup(row_width=1)
-        kb.add(InlineKeyboardButton("➕ Kanal qo'shish", callback_data="adm_add_ch"))
-        kb.add(InlineKeyboardButton("🔄 Yoq/O'chir", callback_data="adm_tog_sub"))
-        kb.add(InlineKeyboardButton("🔙", callback_data="adm_back"))
-        bot.edit_message_text(text, uid, call.message.message_id, reply_markup=kb)
-
-    elif data == "adm_add_ch":
-        msg = bot.send_message(uid, "Format: <code>@username|Nomi</code>")
-        bot.register_next_step_handler(msg, add_ch)
+        show_subs_menu(uid, call.message.message_id)
 
     elif data == "adm_tog_sub":
-        cur = get_setting("force_sub_enabled", "0")
+        cur = get_setting("force_sub_enabled", "1")
         set_setting("force_sub_enabled", "0" if cur == "1" else "1")
         bot.answer_callback_query(call.id, "✅")
+        show_subs_menu(uid, call.message.message_id)
+
+    elif data == "adm_add_ch":
+        msg = bot.send_message(uid,
+            "📢 <b>Kanal qo'shish</b>\n\n"
+            "Ommaviy: <code>@username|Nomi|member</code>\n"
+            "Yopiq: <code>https://t.me/+XXXX|Nomi|request</code>")
+        bot.register_next_step_handler(msg, add_ch_step)
+
+    elif data.startswith("adm_del_ch:"):
+        ch_id = int(data.split(":")[1])
+        conn = db()
+        conn.execute("DELETE FROM channels WHERE id=?", (ch_id,))
+        conn.commit()
+        conn.close()
+        bot.answer_callback_query(call.id, "✅")
+        show_subs_menu(uid, call.message.message_id)
 
     elif data == "adm_admins":
         conn = db()
@@ -630,7 +748,8 @@ def cb(call):
         aid = int(data.split(":")[1])
         conn = db()
         conn.execute("DELETE FROM admins WHERE telegram_id=?", (aid,))
-        conn.commit(); conn.close()
+        conn.commit()
+        conn.close()
         bot.answer_callback_query(call.id, "✅")
 
     elif data == "adm_msgs":
@@ -638,9 +757,11 @@ def cb(call):
         msgs = conn.execute("SELECT * FROM support_messages WHERE status='open' ORDER BY created_at DESC LIMIT 10").fetchall()
         conn.close()
         text = "📋 <b>Xabarlar</b>\n\n"
-        if not msgs: text += "Yo'q"
+        if not msgs:
+            text += "Yo'q"
         else:
-            for m in msgs: text += f"#{m['id']}: {m['message'][:40]}\n"
+            for m in msgs:
+                text += f"#{m['id']}: {m['message'][:40]}\n"
         kb = InlineKeyboardMarkup().add(InlineKeyboardButton("🔙", callback_data="adm_back"))
         bot.edit_message_text(text, uid, call.message.message_id, reply_markup=kb)
 
@@ -673,6 +794,82 @@ def cb(call):
         bot.register_next_step_handler(msg, send_reply, mid)
 
 
+def show_subs_menu(uid, msg_id):
+    channels = get_all_channels()
+    enabled = get_setting("force_sub_enabled") == "1"
+    text = f"🔒 <b>Majburiy obuna</b>\n\n"
+    text += f"Holat: {'✅ Yoqilgan' if enabled else '❌ O\'chirilgan'}\n\n"
+    if channels:
+        text += "<b>Kanallar:</b>\n"
+        for i, ch in enumerate(channels, 1):
+            mode = "📢 Ommaviy" if ch["check_mode"] == "member" else "📨 So'rov"
+            text += f"{i}. {ch['name']} ({mode})\n"
+            text += f"   <code>{ch['chat_id']}</code>\n"
+    else:
+        text += "Kanallar yo'q\n"
+    kb = InlineKeyboardMarkup(row_width=1)
+    kb.add(InlineKeyboardButton("➕ Kanal qo'shish", callback_data="adm_add_ch"))
+    kb.add(InlineKeyboardButton(
+        f"{'🔴 O\'chirish' if enabled else '🟢 Yoqish'}",
+        callback_data="adm_tog_sub"))
+    for ch in channels:
+        kb.add(InlineKeyboardButton(f"🗑 {ch['name']}",
+                                    callback_data=f"adm_del_ch:{ch['id']}"))
+    kb.add(InlineKeyboardButton("🔙", callback_data="adm_back"))
+    try:
+        bot.edit_message_text(text, uid, msg_id, reply_markup=kb)
+    except:
+        bot.send_message(uid, text, reply_markup=kb)
+
+
+def add_ch_step(message):
+    try:
+        parts = message.text.split("|")
+        if len(parts) < 3:
+            raise ValueError("Format: @username|Nomi|member")
+        raw_id = parts[0].strip()
+        name = parts[1].strip()
+        mode = parts[2].strip().lower()
+        if mode not in ("member", "request"):
+            mode = "member"
+        username = None
+        invite_link = None
+        chat_id = raw_id
+        if raw_id.startswith("@"):
+            username = raw_id
+            try:
+                chat = bot.get_chat(raw_id)
+                chat_id = str(chat.id)
+            except Exception as e:
+                bot.send_message(message.chat.id, f"⚠️ Botni admin qiling!\n<code>{e}</code>")
+            invite_link = f"https://t.me/{raw_id.replace('@', '')}"
+        elif raw_id.startswith("https://t.me/+"):
+            invite_link = raw_id
+            try:
+                chat = bot.get_chat(raw_id)
+                chat_id = str(chat.id)
+                username = chat.username
+            except Exception as e:
+                bot.send_message(message.chat.id, f"⚠️ Invite xato!\n<code>{e}</code>")
+        else:
+            chat_id = raw_id
+            try:
+                chat = bot.get_chat(raw_id)
+                username = chat.username
+                invite_link = chat.invite_link
+            except: pass
+        conn = db()
+        conn.execute("""INSERT INTO channels(chat_id,name,username,invite_link,check_mode)
+            VALUES(?,?,?,?,?)""",
+            (str(chat_id), name, username, invite_link, mode))
+        conn.commit()
+        conn.close()
+        bot.send_message(message.chat.id,
+            f"✅ Qo'shildi!\n\n📌 <b>{name}</b>\n🆔 <code>{chat_id}</code>\n🔧 {mode}")
+    except Exception as e:
+        bot.send_message(message.chat.id, f"❌ {e}")
+
+
 def bc_ok(message):
     if message.content_type != "text":
         bot.reply_to(message, "❌"); return
@@ -683,42 +880,27 @@ def bc_ok(message):
     bot.send_message(message.chat.id, f"📣 {message.text}\n\n<b>Tasdiq?</b>", reply_markup=kb)
 
 
-def add_ch(message):
-    try:
-        p = message.text.split("|")
-        if len(p) < 2: raise ValueError("Format: @username|Nomi")
-        u = p[0].strip(); n = p[1].strip()
-        chat_id = u
-        try: chat_id = bot.get_chat(u).id
-        except: pass
-        conn = db()
-        conn.execute("""INSERT INTO channels(chat_id,name,username,invite_link,check_mode)
-            VALUES(?,?,?,?,?)""",
-            (str(chat_id), n, u, f"https://t.me/{u.lstrip('@')}", "member"))
-        conn.commit(); conn.close()
-        bot.send_message(message.chat.id, "✅ Kanal qo'shildi")
-    except Exception as e:
-        bot.send_message(message.chat.id, f"❌ {e}")
-
-
 def add_adm(message):
     try:
         aid = int(message.text.strip())
         conn = db()
         conn.execute("INSERT OR IGNORE INTO admins(telegram_id,added_by,created_at) VALUES(?,?,?)",
                      (aid, message.from_user.id, datetime.utcnow().isoformat()))
-        conn.commit(); conn.close()
+        conn.commit()
+        conn.close()
         bot.send_message(message.chat.id, f"✅ Admin: {aid}")
         try: bot.send_message(aid, "🎉 Siz admin!")
         except: pass
-    except: bot.send_message(message.chat.id, "❌ Raqam")
+    except:
+        bot.send_message(message.chat.id, "❌ Raqam")
 
 
 def set_val(message, key):
     try:
         set_setting(key, str(int(message.text.strip())))
         bot.send_message(message.chat.id, f"✅ {key} = {message.text.strip()}")
-    except: bot.send_message(message.chat.id, "❌ Raqam kiriting")
+    except:
+        bot.send_message(message.chat.id, "❌ Raqam")
 
 
 def send_reply(message, mid):
@@ -737,9 +919,56 @@ def send_reply(message, mid):
     conn.close()
 
 
-# ═══════════════════════════════════════════════════════════
+@bot.chat_join_request_handler(func=lambda r: True)
+def join_request_handler(req):
+    uid = req.from_user.id
+    uname = req.from_user.username or "—"
+    name = req.from_user.full_name
+    conn = db()
+    conn.execute("""INSERT OR REPLACE INTO pending_subs(user_id,channel_id,requested_at)
+        VALUES(?,?,?)""",
+        (uid, str(req.chat.id), datetime.utcnow().isoformat()))
+    conn.commit()
+    conn.close()
+    for admin_id in ADMIN_IDS:
+        try:
+            kb = InlineKeyboardMarkup()
+            kb.add(
+                InlineKeyboardButton("✅ Tasdiqlash", callback_data=f"jr_ok:{req.chat.id}:{uid}"),
+                InlineKeyboardButton("❌ Rad etish", callback_data=f"jr_no:{req.chat.id}:{uid}"),
+            )
+            bot.send_message(admin_id,
+                f"📨 <b>Yangi so'rov</b>\n\n👤 {name} (@{uname})\n🆔 <code>{uid}</code>\n📢 <b>{req.chat.title}</b>",
+                reply_markup=kb)
+        except: pass
+
+
+@bot.callback_query_handler(func=lambda c: c.data.startswith("jr_"))
+def join_req_action(call):
+    if call.from_user.id not in ADMIN_IDS:
+        bot.answer_callback_query(call.id, "🚫")
+        return
+    parts = call.data.split(":")
+    action = parts[0]
+    chat_id = int(parts[1])
+    user_id = int(parts[2])
+    try:
+        if action == "jr_ok":
+            bot.approve_chat_join_request(chat_id, user_id)
+            bot.answer_callback_query(call.id, "✅ Tasdiqlandi")
+            try: bot.send_message(user_id, "✅ So'rovingiz tasdiqlandi!")
+            except: pass
+        else:
+            bot.decline_chat_join_request(chat_id, user_id)
+            bot.answer_callback_query(call.id, "❌ Rad etildi")
+        bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=None)
+    except Exception as e:
+        bot.answer_callback_query(call.id, f"❌ {e}", show_alert=True)
+
+
+# ═══════════════════════════════════════════════════════════════
 # FLASK
-# ═══════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
 app = Flask(__name__)
 CORS(app, origins="*")
 
@@ -773,14 +1002,16 @@ def auth(f):
             tg = validate_init(request.headers.get("X-Telegram-Init-Data", ""))
         except ValueError as e:
             return jsonify({"detail": str(e)}), 401
+        if not check_subscription(tg["id"]):
+            return jsonify({"detail": "Obuna kerak", "need_sub": True}), 403
         return f(tg, *a, **k)
     return w
 
 
-# ═══════════════════════════════════════════════════════════
-# HTML — INLINE (bitta faylda!)
-# ═══════════════════════════════════════════════════════════
-HTML_PAGE = r"""<!DOCTYPE html>
+# ═══════════════════════════════════════════════════════════════
+# HTML — MINI APP
+# ═══════════════════════════════════════════════════════════════
+HTML_PAGE = r'''<!DOCTYPE html>
 <html lang="uz" data-theme="light">
 <head>
 <meta charset="UTF-8">
@@ -862,6 +1093,10 @@ word-break:break-all;margin:10px 0;border:1px solid var(--border)}
 .logo-upload{display:flex;align-items:center;gap:10px;padding:14px;background:var(--card);
 border-radius:14px;border:2px dashed var(--border);cursor:pointer;margin-bottom:10px}
 .logo-upload img{width:50px;height:50px;object-fit:contain;border-radius:8px}
+.error-page{padding:60px 20px;text-align:center}
+.error-page .icon{font-size:64px;margin-bottom:20px}
+.error-page h2{color:var(--primary);margin-bottom:10px}
+.error-page p{color:var(--muted);margin-bottom:20px}
 </style>
 </head>
 <body>
@@ -871,7 +1106,7 @@ border-radius:14px;border:2px dashed var(--border);cursor:pointer;margin-bottom:
   <div class="avatar" id="avatar">U</div>
 </div>
 
-<div class="main">
+<div class="main" id="mainContent">
   <div class="page active" id="page-home">
     <div class="hero"><h2>🎯 QR Master</h2><p>20+ turdagi QR kod yaratish</p></div>
     <div class="section-title">QR turlari</div>
@@ -1008,35 +1243,71 @@ const App = {
 
   async init() {
     const tg = window.Telegram?.WebApp;
-    if (tg) { tg.ready(); tg.expand();
+    if (tg) {
+      tg.ready(); tg.expand();
       document.documentElement.setAttribute('data-theme', tg.colorScheme === 'dark' ? 'dark' : 'light');
     }
     this.initData = tg?.initData || '';
-    this.renderTypes(); this.bindNav(); this.bindForm(); this.bindProfile(); this.bindRef(); this.bindAds();
+
+    if (!this.initData) {
+      this.showError('⚠️', 'Telegram orqali oching',
+        'Bu sahifa faqat Telegram bot orqali ishlaydi.<br><br>Botga qaytib <b>🧩 QR kod yaratish</b> tugmasini bosing.');
+      return;
+    }
+
+    this.renderTypes();
+    this.bindNav();
+    this.bindForm();
+    this.bindProfile();
+    this.bindRef();
+    this.bindAds();
     this.loadProfile();
 
-    if (this.initData) {
-      try {
-        this.me = await this.api('/api/auth/me', 'POST');
-        this.updateStats();
-        await this.loadHistory();
-        await this.loadRefs();
-      } catch (e) {
-        this.toast('Xato: ' + e.message, 'error');
-        console.warn(e);
+    try {
+      this.me = await this.api('/api/auth/me', 'POST');
+      if (this.me.need_sub) {
+        this.showError('🔒', 'Obuna kerak',
+          'Botdan foydalanish uchun kanalga obuna bo\'ling.<br><br>Telegram botga qaytib <b>✅ Obunani tekshirish</b> tugmasini bosing.');
+        return;
       }
-    } else {
-      this.toast('Telegram orqali oching!', 'error');
+      this.updateStats();
+      await this.loadHistory();
+      await this.loadRefs();
+    } catch (e) {
+      console.warn('API xato:', e.message);
+      if (e.message.includes('initData') || e.message.includes('Imzo')) {
+        this.showError('⚠️', 'Telegram orqali oching',
+          'Botga qaytib "🧩 QR kod yaratish" tugmasini bosing.');
+      } else {
+        this.toast('Xato: ' + e.message, 'error');
+      }
     }
   },
 
+  showError(icon, title, text) {
+    document.getElementById('mainContent').innerHTML = `
+      <div class="error-page">
+        <div class="icon">${icon}</div>
+        <h2>${title}</h2>
+        <p>${text}</p>
+      </div>`;
+    document.querySelector('.nav').style.display = 'none';
+  },
+
   async api(path, method = 'GET', body = null) {
-    const opts = { method, headers: {
-      'X-Telegram-Init-Data': this.initData, 'Content-Type': 'application/json' } };
+    const opts = {
+      method,
+      headers: {
+        'X-Telegram-Init-Data': this.initData,
+        'Content-Type': 'application/json'
+      }
+    };
     if (body) opts.body = JSON.stringify(body);
     const r = await fetch(path, opts);
-    if (!r.ok) { const e = await r.json().catch(() => ({ detail: 'Xatolik' }));
-      throw new Error(e.detail || 'Xatolik'); }
+    if (!r.ok) {
+      const e = await r.json().catch(() => ({ detail: 'Xatolik' }));
+      throw new Error(e.detail || 'Xatolik');
+    }
     return r.json();
   },
 
@@ -1098,11 +1369,13 @@ const App = {
         '<span class="type-icon">' + t.icon + '</span>' +
         '<span class="type-label">' + t.label + '</span></button>').join('');
     document.querySelectorAll('.type-card').forEach(b => {
-      b.onclick = () => this.openCreate(b.dataset.type); });
+      b.onclick = () => this.openCreate(b.dataset.type);
+    });
   },
 
   openCreate(id) {
-    const t = this.types.find(x => x.id === id); if (!t) return;
+    const t = this.types.find(x => x.id === id);
+    if (!t) return;
     this.currentType = id;
     document.getElementById('createTitle').textContent = t.icon + ' ' + t.label;
     document.getElementById('dynamicFields').innerHTML = t.fields.map(f => {
@@ -1159,13 +1432,11 @@ const App = {
       c.innerHTML = '';
       const qrDiv = document.createElement('div');
       c.appendChild(qrDiv);
-
       new QRCode(qrDiv, {
         text: data, width: size, height: size,
         colorDark: fill, colorLight: back,
         correctLevel: QRCode.CorrectLevel.H
       });
-
       if (this.logoData) {
         setTimeout(() => {
           const canvas = qrDiv.querySelector('canvas');
@@ -1185,13 +1456,15 @@ const App = {
           img.src = this.logoData;
         }, 100);
       }
-
       this.currentData = data;
       document.getElementById('qrResult').style.display = 'block';
       document.getElementById('qrResult').scrollIntoView({ behavior: 'smooth' });
       this.toast('Yaratildi ✅', 'success');
-    } catch (e) { this.toast('Xato: ' + e.message, 'error'); }
-    finally { this.showLoading(false); }
+    } catch (e) {
+      this.toast('Xato: ' + e.message, 'error');
+    } finally {
+      this.showLoading(false);
+    }
   },
 
   download() {
@@ -1214,13 +1487,11 @@ const App = {
         data: this.currentData
       });
       this.toast('✅ Saqlandi! Botda "📜 Mening QR larim" da ko\'ring', 'success');
-
       if (this.me) {
         this.me.qr_count = res.total_qr;
         this.updateStats();
       }
       await this.loadHistory();
-
       if (res.show_ad) {
         this.showLoading(false);
         if (confirm('🎬 Bepul limit tugadi!\n\nReklama ko\'rib +3 QR unlock olasizmi?')) {
@@ -1230,7 +1501,7 @@ const App = {
           if (watched) {
             const r = await this.api('/api/qr/ad_complete', 'POST', {});
             this.me.unlock_count = r.unlock;
-            this.me.ad_count = (this.me.ad_count || 0) + 1;
+            this.me.ad_count = r.ad_count || (this.me.ad_count || 0) + 1;
             this.updateStats();
             this.toast('🎁 +3 QR unlock!', 'success');
           } else {
@@ -1238,21 +1509,28 @@ const App = {
           }
         }
       }
-    } catch (e) { this.toast(e.message, 'error'); }
-    finally { this.showLoading(false); }
+    } catch (e) {
+      this.toast(e.message, 'error');
+    } finally {
+      this.showLoading(false);
+    }
   },
 
   async loadHistory() {
     try {
       const list = await this.api('/api/qr/history');
-      this.renderHistory(list); this.renderRecent(list);
+      this.renderHistory(list);
+      this.renderRecent(list);
     } catch (e) { console.warn(e); }
   },
 
   renderRecent(list) {
     const el = document.getElementById('recentList');
     const r = list.slice(0, 3);
-    if (!r.length) { el.innerHTML = '<div class="empty"><span class="ico">🎯</span>Bo\'sh</div>'; return; }
+    if (!r.length) {
+      el.innerHTML = '<div class="empty"><span class="ico">🎯</span>Bo\'sh</div>';
+      return;
+    }
     el.innerHTML = r.map(h => '<div class="hist-item"><div class="hist-info">' +
       '<h4>' + h.name + '</h4><p>' + h.qr_type + ' · ' + new Date(h.created_at).toLocaleString('uz') + '</p>' +
     '</div></div>').join('');
@@ -1260,7 +1538,10 @@ const App = {
 
   renderHistory(list) {
     const el = document.getElementById('historyList');
-    if (!list.length) { el.innerHTML = '<div class="empty"><span class="ico">🕐</span>Bo\'sh</div>'; return; }
+    if (!list.length) {
+      el.innerHTML = '<div class="empty"><span class="ico">🕐</span>Bo\'sh</div>';
+      return;
+    }
     el.innerHTML = list.map(h => '<div class="hist-item">' +
       '<div class="hist-info">' +
         '<h4>' + h.name + '</h4>' +
@@ -1276,8 +1557,13 @@ const App = {
       await this.api('/api/qr/' + id, 'DELETE');
       this.toast("O'chirildi", 'info');
       await this.loadHistory();
-      if (this.me) { this.me.qr_count = Math.max(0, this.me.qr_count - 1); this.updateStats(); }
-    } catch (e) { this.toast(e.message, 'error'); }
+      if (this.me) {
+        this.me.qr_count = Math.max(0, this.me.qr_count - 1);
+        this.updateStats();
+      }
+    } catch (e) {
+      this.toast(e.message, 'error');
+    }
   },
 
   async loadRefs() {
@@ -1306,8 +1592,12 @@ const App = {
   bindRef() {
     document.getElementById('copyRef').onclick = async () => {
       const link = document.getElementById('refLink').textContent;
-      try { await navigator.clipboard.writeText(link); this.toast('Nusxalandi 📋', 'success'); }
-      catch { this.toast('Xato', 'error'); }
+      try {
+        await navigator.clipboard.writeText(link);
+        this.toast('Nusxalandi 📋', 'success');
+      } catch {
+        this.toast('Xato', 'error');
+      }
     };
     document.getElementById('shareRef').onclick = () => {
       const link = document.getElementById('refLink').textContent;
@@ -1324,10 +1614,12 @@ const App = {
         try {
           const r = await this.api('/api/qr/ad_complete', 'POST', {});
           this.me.unlock_count = r.unlock;
-          this.me.ad_count = (this.me.ad_count || 0) + 1;
+          this.me.ad_count = r.ad_count || (this.me.ad_count || 0) + 1;
           this.updateStats();
           this.toast('🎁 +3 QR unlock!', 'success');
-        } catch (e) { this.toast(e.message, 'error'); }
+        } catch (e) {
+          this.toast(e.message, 'error');
+        }
       } else {
         this.toast("Reklama ko'rilmadi", 'error');
       }
@@ -1347,7 +1639,6 @@ const App = {
     document.getElementById('backBtn').onclick = () => this.goPage('home');
     document.getElementById('dlBtn').onclick = () => this.download();
     document.getElementById('saveHistBtn').onclick = () => this.saveToHistory();
-
     document.getElementById('logoFile').onchange = (e) => {
       const f = e.target.files[0];
       if (!f) return;
@@ -1384,22 +1675,26 @@ const App = {
   toast(msg, type = 'info') {
     const w = document.getElementById('toastWrap');
     const el = document.createElement('div');
-    el.className = 'toast ' + type; el.textContent = msg;
-    w.appendChild(el); setTimeout(() => el.remove(), 3500);
+    el.className = 'toast ' + type;
+    el.textContent = msg;
+    w.appendChild(el);
+    setTimeout(() => el.remove(), 3500);
   },
 
-  showLoading(on) { document.getElementById('loading').classList.toggle('on', on); }
+  showLoading(on) {
+    document.getElementById('loading').classList.toggle('on', on);
+  }
 };
 
 window.addEventListener('DOMContentLoaded', () => App.init());
 </script>
 </body>
-</html>"""
+</html>'''
 
 
-# ═══════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
 # ROUTES
-# ═══════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
 @app.route("/", methods=["GET", "HEAD"])
 def index():
     return Response(HTML_PAGE, mimetype="text/html")
@@ -1411,13 +1706,21 @@ def health():
 
 
 @app.route("/api/auth/me", methods=["POST", "GET", "OPTIONS"])
-@auth
-def api_me(tg):
+def api_me():
+    if request.method == "OPTIONS":
+        return jsonify({"ok": True})
+    init_data = request.headers.get("X-Telegram-Init-Data", "")
+    try:
+        tg = validate_init(init_data)
+    except ValueError as e:
+        print(f"❌ Auth: {e}")
+        return jsonify({"detail": str(e)}), 401
     upsert_user(tg)
     u = get_user(tg["id"])
+    need_sub = not check_subscription(tg["id"])
     return jsonify({
         "id": u["telegram_id"], "username": u["username"],
-        "first_name": u["first_name"],
+        "first_name": u["first_name"], "last_name": u["last_name"],
         "qr_count": u["qr_count"], "ad_count": u["ad_count"],
         "unlock_count": u.get("unlock_count", 0),
         "is_admin": is_admin(tg["id"]),
@@ -1425,6 +1728,7 @@ def api_me(tg):
         "bot_username": BOT_USERNAME,
         "free_qr": get_setting("free_qr_count"),
         "qr_per_ad": get_setting("qr_per_ad"),
+        "need_sub": need_sub,
     })
 
 
@@ -1435,23 +1739,19 @@ def api_create_qr(tg):
     data = (body.get("data") or "").strip()
     if not data: return jsonify({"detail": "Bo'sh"}), 400
     if len(data) > 5000: return jsonify({"detail": "Uzun"}), 400
-
     upsert_user(tg)
     add_qr(tg["id"], body.get("qr_type") or "universal",
            (body.get("name") or "QR")[:255], data)
-
     u = get_user(tg["id"])
     total = u["qr_count"]
     free = int(get_setting("free_qr_count", "5"))
     unlock = u.get("unlock_count", 0)
     per_ad = int(get_setting("qr_per_ad", "3"))
     limit = free + unlock
-
     show_ad = False
     if total > limit and per_ad > 0:
         if (total - limit) % per_ad == 0:
             show_ad = True
-
     return jsonify({"ok": True, "total_qr": total, "limit": limit,
                     "unlock": unlock, "show_ad": show_ad})
 
@@ -1464,9 +1764,10 @@ def api_ad_done(tg):
                  (tg["id"], "rewarded", "completed", datetime.utcnow().isoformat()))
     conn.execute("UPDATE users SET ad_count=ad_count+1, unlock_count=unlock_count+? WHERE telegram_id=?",
                  (int(get_setting("qr_per_ad", "3")), tg["id"]))
-    conn.commit(); conn.close()
+    conn.commit()
+    conn.close()
     u = get_user(tg["id"])
-    return jsonify({"ok": True, "unlock": u.get("unlock_count", 0)})
+    return jsonify({"ok": True, "unlock": u.get("unlock_count", 0), "ad_count": u["ad_count"]})
 
 
 @app.route("/api/qr/history", methods=["GET", "OPTIONS"])
@@ -1480,7 +1781,8 @@ def api_history(tg):
 @app.route("/api/qr/<int:qr_id>", methods=["DELETE", "OPTIONS"])
 @auth
 def api_del_qr(tg, qr_id):
-    if del_qr(qr_id, tg["id"]): return jsonify({"ok": True})
+    if del_qr(qr_id, tg["id"]):
+        return jsonify({"ok": True})
     return jsonify({"detail": "Topilmadi"}), 404
 
 
@@ -1491,22 +1793,21 @@ def api_ref_list(tg):
                     "refs": get_refs(tg["id"], 50, 0)})
 
 
-# ═══════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
 def run_bot():
     while True:
         try:
             bot.remove_webhook()
-            get_bot_username()
-            bot.set_my_commands([
-                BotCommand("start", "Bosh menyu"),
-                BotCommand("help", "Yordam"),
-                BotCommand("id", "Telegram ID"),
-            ])
+            setup_bot()
             print("✅ Bot tayyor")
-            bot.infinity_polling(skip_pending=True, timeout=30)
-        except KeyboardInterrupt: break
+            bot.infinity_polling(skip_pending=True, timeout=30,
+                                 allowed_updates=['message', 'callback_query',
+                                                  'chat_join_request'])
+        except KeyboardInterrupt:
+            break
         except Exception as e:
-            print(f"⚠️ {e}"); time.sleep(5)
+            print(f"⚠️ Bot: {e}")
+            time.sleep(5)
 
 
 if __name__ == "__main__":
