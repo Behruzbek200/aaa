@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>RichAds Diagnostika</title>
+    <title>RichAds Test</title>
     
     <!-- Telegram WebApp Rasmiy SDK -->
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
@@ -20,7 +20,7 @@
 
     <style>
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             background-color: #f4f4f9;
             color: #333;
             text-align: center;
@@ -31,35 +31,20 @@
             max-width: 400px;
             margin: 20px auto;
             background: #ffffff;
-            padding: 20px;
+            padding: 25px;
             border-radius: 16px;
             box-shadow: 0 4px 15px rgba(0,0,0,0.1);
         }
-        h3 {
-            font-size: 18px;
+        h1 {
+            font-size: 20px;
             color: #2b5278;
-            margin-bottom: 5px;
-        }
-        p {
-            font-size: 13px;
-            color: #666;
-            margin-bottom: 10px;
-        }
-        pre {
-            text-align: left;
-            background: #f1f1f1;
-            padding: 10px;
-            border-radius: 8px;
-            font-size: 11px;
-            overflow-x: auto;
-            max-height: 120px;
         }
         .btn {
             background-color: #2481cc;
             color: white;
             border: none;
-            padding: 12px 20px;
-            font-size: 15px;
+            padding: 14px 20px;
+            font-size: 16px;
             font-weight: bold;
             border-radius: 10px;
             cursor: pointer;
@@ -70,11 +55,10 @@
 </head>
 <body>
     <div class="container">
-        <h3>RichAds Diagnostika</h3>
-        <p id="status">Skript holati tekshirilmoqda...</p>
-        <pre id="debug-info">Yuklanmoqda...</pre>
+        <h1>RichAds Reklama Sinovi</h1>
+        <p>Reklamani chiqarish uchun pastdagi tugmani bosing:</p>
         
-        <button class="btn" onclick="testAd()">Reklamani Sinash</button>
+        <button class="btn" onclick="showAd()">Banner Reklamani Ko'rsatish</button>
     </div>
 
     <script>
@@ -83,40 +67,20 @@
             window.Telegram.WebApp.expand();
         }
 
-        window.addEventListener('DOMContentLoaded', () => {
-            let info = "";
+        function showAd() {
             if (window.TelegramAdsController) {
-                info += "TelegramAdsController mavjud.\n";
                 try {
-                    let proto = Object.getOwnPropertyNames(Object.getPrototypeOf(window.TelegramAdsController));
-                    let keys = Object.keys(window.TelegramAdsController);
-                    info += "Keys: " + JSON.stringify(keys) + "\n";
-                    info += "Methods: " + JSON.stringify(proto) + "\n";
-                } catch(e) {
-                    info += "Xato: " + e.message + "\n";
+                    // Aniq mavjud bo'lgan metodni chaqiramiz
+                    if (typeof window.TelegramAdsController.triggerInterstitialBanner === 'function') {
+                        window.TelegramAdsController.triggerInterstitialBanner();
+                    } else {
+                        alert("triggerInterstitialBanner metodi topilmadi.");
+                    }
+                } catch (e) {
+                    alert("Xatolik: " + e.message);
                 }
             } else {
-                info += "TelegramAdsController TOPILMADI!\n";
-            }
-            document.getElementById("debug-info").innerText = info;
-            document.getElementById("status").innerText = "Tayyor. Tugmani bosing.";
-        });
-
-        function testAd() {
-            try {
-                document.getElementById("status").innerText = "activate() chaqirildi...";
-                if (window.TelegramAdsController) {
-                    if (typeof window.TelegramAdsController.activate === 'function') {
-                        window.TelegramAdsController.activate();
-                    } else {
-                        alert("activate() metodi topilmadi.");
-                    }
-                } else {
-                    alert("Controller topilmadi.");
-                }
-            } catch (err) {
-                alert("Xatolik: " + err.message);
-                document.getElementById("status").innerText = "Xato yuz berdi.";
+                alert("Controller yuklanmagan.");
             }
         }
     </script>
