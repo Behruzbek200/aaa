@@ -5,6 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Telegram WebApp Reklama Test</title>
     
+    <!-- Telegram WebApp Rasmiy SDK -->
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+
     <!-- RichAds Telegram Mini App Reklama Skripti -->
     <script src="https://richinfo.co/richpartners/telegram/js/tg-ob.js"></script>
     <script>
@@ -21,26 +24,26 @@
             background-color: #f4f4f9;
             color: #333;
             text-align: center;
-            padding: 40px 20px;
+            padding: 20px;
             margin: 0;
         }
         .container {
             max-width: 400px;
-            margin: 0 auto;
+            margin: 20px auto;
             background: #ffffff;
-            padding: 30px;
+            padding: 25px;
             border-radius: 16px;
             box-shadow: 0 4px 15px rgba(0,0,0,0.1);
         }
         h1 {
-            font-size: 22px;
+            font-size: 20px;
             color: #2b5278;
             margin-bottom: 10px;
         }
         p {
-            font-size: 15px;
+            font-size: 14px;
             color: #666;
-            line-height: 1.5;
+            line-height: 1.4;
         }
         .badge {
             display: inline-block;
@@ -50,15 +53,50 @@
             border-radius: 20px;
             font-size: 13px;
             font-weight: 600;
-            margin-top: 15px;
+            margin-bottom: 20px;
+        }
+        .btn {
+            background-color: #2481cc;
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            font-size: 15px;
+            font-weight: bold;
+            border-radius: 10px;
+            cursor: pointer;
+            width: 100%;
+            transition: background 0.3s;
+        }
+        .btn:active {
+            background-color: #1c66a3;
         }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>Reklama Test Sahifasi</h1>
-        <p>Ushbu sahifa Telegram WebApp ichida reklamalarning ishlashini tekshirish uchun mo'ljallangan.</p>
         <div class="badge">PubID: 1018576</div>
+        <p>Reklama ko'rsatilishini tekshirish uchun pastdagi tugmani bosing:</p>
+        
+        <button class="btn" onclick="showAd()">Reklamani Ko'rsatish</button>
     </div>
+
+    <script>
+        // Telegram WebApp oynasini to'liq kengaytirish
+        if (window.Telegram && window.Telegram.WebApp) {
+            window.Telegram.WebApp.ready();
+            window.Telegram.WebApp.expand();
+        }
+
+        // Reklamani chaqirish funksiyasi
+        function showAd() {
+            if (window.TelegramAdsController) {
+                // Interstitial (ekran bo'ylab) reklamani chiqarishga urinish
+                window.TelegramAdsController.activate();
+            } else {
+                alert("Reklama skripti hali yuklanmadi. Biroz kutib qayta urinib ko'ring.");
+            }
+        }
+    </script>
 </body>
 </html>
