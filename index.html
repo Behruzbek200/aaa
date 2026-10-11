@@ -6,6 +6,7 @@
     <title>Telegram WebApp Reklama Test</title>
     
     <!-- Telegram WebApp Rasmiy SDK -->
+    <script src="telegram-web-app.js" data-cfasync="false"></script> <!-- yoki rasmiyhavola -->
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
 
     <!-- RichAds Telegram Mini App Reklama Skripti -->
@@ -14,7 +15,7 @@
       window.TelegramAdsController = new TelegramAdsController();
       window.TelegramAdsController.initialize({
         pubId: "1018576",
-        appId: "null",
+        appId: "10...", // 10 dan boshlanadigan ilova identifikatoringizni shu yerga yozing
       });
     </script>
 
@@ -65,10 +66,6 @@
             border-radius: 10px;
             cursor: pointer;
             width: 100%;
-            transition: background 0.3s;
-        }
-        .btn:active {
-            background-color: #1c66a3;
         }
     </style>
 </head>
@@ -82,19 +79,16 @@
     </div>
 
     <script>
-        // Telegram WebApp oynasini to'liq kengaytirish
         if (window.Telegram && window.Telegram.WebApp) {
             window.Telegram.WebApp.ready();
             window.Telegram.WebApp.expand();
         }
 
-        // Reklamani chaqirish funksiyasi
         function showAd() {
             if (window.TelegramAdsController) {
-                // Interstitial (ekran bo'ylab) reklamani chiqarishga urinish
                 window.TelegramAdsController.activate();
             } else {
-                alert("Reklama skripti hali yuklanmadi. Biroz kutib qayta urinib ko'ring.");
+                alert("Reklama skripti hali yuklanmadi.");
             }
         }
     </script>
