@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>RichAds Test</title>
+    <title>RichAds Test Console</title>
     
     <!-- Telegram WebApp Rasmiy SDK -->
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
@@ -24,41 +24,61 @@
             background-color: #f4f4f9;
             color: #333;
             text-align: center;
-            padding: 20px;
+            padding: 15px;
             margin: 0;
         }
         .container {
             max-width: 400px;
-            margin: 20px auto;
+            margin: 10px auto;
             background: #ffffff;
-            padding: 25px;
+            padding: 20px;
             border-radius: 16px;
             box-shadow: 0 4px 15px rgba(0,0,0,0.1);
         }
-        h1 {
-            font-size: 20px;
+        h3 {
+            font-size: 18px;
             color: #2b5278;
+            margin-bottom: 5px;
+        }
+        p {
+            font-size: 13px;
+            color: #666;
+            margin-bottom: 10px;
         }
         .btn {
             background-color: #2481cc;
             color: white;
             border: none;
             padding: 14px 20px;
-            font-size: 16px;
+            font-size: 15px;
             font-weight: bold;
             border-radius: 10px;
             cursor: pointer;
             width: 100%;
+            margin-top: 10px;
+        }
+        #console {
+            background: #111;
+            color: #00ff00;
+            padding: 10px;
+            border-radius: 8px;
+            font-family: monospace;
+            font-size: 11px;
+            text-align: left;
+            height: 130px;
+            overflow-y: auto;
             margin-top: 15px;
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>RichAds Reklama Sinovi</h1>
-        <p>Reklamani chiqarish uchun pastdagi tugmani bosing:</p>
+        <h3>RichAds Test Konsoli</h3>
+        <p>Tugmani bosing va natijani quyida kuzating:</p>
         
-        <button class="btn" onclick="showAd()">Banner Reklamani Ko'rsatish</button>
+        <button class="btn" id="adBtn">Reklamani Ishga Tushirish</button>
+        
+        <div id="console">Tizim tayyor...<br></div>
     </div>
 
     <script>
@@ -67,22 +87,31 @@
             window.Telegram.WebApp.expand();
         }
 
-        function showAd() {
-            if (window.TelegramAdsController) {
-                try {
-                    // Aniq mavjud bo'lgan metodni chaqiramiz
-                    if (typeof window.TelegramAdsController.triggerInterstitialBanner === 'function') {
-                        window.TelegramAdsController.triggerInterstitialBanner();
-                    } else {
-                        alert("triggerInterstitialBanner metodi topilmadi.");
-                    }
-                } catch (e) {
-                    alert("Xatolik: " + e.message);
-                }
-            } else {
-                alert("Controller yuklanmagan.");
-            }
+        function logToScreen(text) {
+            const con = document.getElementById('console');
+            con.innerHTML += text + "<br>";
+            con.scrollTop = con.scrollHeight;
         }
+
+        document.getElementById('adBtn').addEventListener('click', function() {
+            logToScreen("--- Tugma bosildi ---");
+            try {
+                if (window.TelegramAdsController) {
+                    logToScreen("Controller mavjud.");
+                    if (typeof window.TelegramAdsController.triggerInterstitialBanner === 'function') {
+                        logToScreen("triggerInterstitialBanner chaqirilmoqda...");
+                        window.TelegramAdsController.triggerInterstitialBanner();
+                        logToScreen("Funksiya bajarildi!");
+                    } else {
+                        logToScreen("Xato: Metod topilmadi.");
+                    }
+                } else {
+                    logToScreen("Xato: Controller topilmadi.");
+                }
+            } catch (err) {
+                logToScreen("Xatolik: " + err.message);
+            }
+        });
     </script>
 </body>
 </html>
