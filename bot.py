@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""QR MASTER — Bot + Backend (Render uchun)"""
+"""QR MASTER — Bot + Backend (Render uchun, CORS tuzatilgan)"""
 import os, hmac, hashlib, json, threading, time, sqlite3, io
 from datetime import datetime
 from functools import wraps
@@ -16,9 +16,9 @@ import qrcode
 
 
 # ═══════════════════════════════════════════════════════════
-# SOZLAMALAR — Render Environment Variables orqali
+# SOZLAMALAR
 # ═══════════════════════════════════════════════════════════
-BOT_TOKEN    = os.getenv("BOT_TOKEN", "SIZNING_TOKENINGIZ")
+BOT_TOKEN    = os.getenv("BOT_TOKEN", "8894647397:AAHpIC0PyVsjQ_XgDZOZGAVdOemN9YSBnMA")
 BOT_USERNAME = os.getenv("BOT_USERNAME", "SizningBotUsername")
 WEBAPP_URL   = os.getenv("WEBAPP_URL", "https://behruzbek200.github.io/aaa")
 ADMIN_IDS    = [int(x) for x in os.getenv("ADMIN_IDS", "8261542613").split(",")]
@@ -28,6 +28,9 @@ DB_FILE      = os.getenv("DB_FILE", "qr_master.db")
 # ═══════════════════════════════════════════════════════════
 
 
+# ═══════════════════════════════════════════════════════════
+# SQLITE BAZASI
+# ═══════════════════════════════════════════════════════════
 def db_init():
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
@@ -215,6 +218,8 @@ def make_qr_image(data, fill="#000000", back="#FFFFFF"):
     return bio
 
 
+# ═══════════════════════════════════════════════════════════
+# TELEGRAM BOT
 # ═══════════════════════════════════════════════════════════
 bot = telebot.TeleBot(BOT_TOKEN, parse_mode="HTML")
 
@@ -776,10 +781,38 @@ def send_reply(message, mid):
 
 
 # ═══════════════════════════════════════════════════════════
-# FLASK API
+# FLASK API — CORS TUZATILGAN
 # ═══════════════════════════════════════════════════════════
 app = Flask(__name__)
-CORS(app, resources={r"/api/*": {"origins": "*"}})
+
+# ═══ CORS — barcha domenlarga ruxsat ═══
+CORS(app,
+     origins="*",
+     allow_headers=["*"],
+     expose_headers=["*"],
+     methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+     supports_credentials=False,
+     max_age=3600)
+
+
+# ═══ AVTOMATIK OPTIONS HANDLER — CORS preflight uchun ═══
+@app.after_request
+def after_request(response):
+    response.headers.add('Access-Control-Allow-Origin', '*')
+    response.headers.add('Access-Control-Allow-Headers', 'Content-Type, X-Telegram-Init-Data, Authorization')
+    response.headers.add('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
+    return response
+
+
+# ═══ ROOT — Render health check uchun ═══
+@app.route("/", methods=["GET", "HEAD"])
+def root():
+    return jsonify({"status": "ok", "service": "QR Master API"})
+
+
+@app.route("/health", methods=["GET", "HEAD"])
+def health():
+    return jsonify({"ok": True, "time": datetime.utcnow().isoformat()})
 
 
 def validate_init(init_data):
@@ -799,21 +832,31 @@ def validate_init(init_data):
 def auth_required(f):
     @wraps(f)
     def w(*a, **k):
+        init_data = request.headers.get("X-Telegram-Init-Data", "")
+        print(f"🔍 Auth: initData={'bor' if init_data else 'YO_Q'} ({len(init_data)} chars)")
         try:
-            tg = validate_init(request.headers.get("X-Telegram-Init-Data",""))
+            tg = validate_init(init_data)
+            print(f"✅ Auth OK: user_id={tg.get('id')}")
         except ValueError as e:
-            return jsonify({"detail":str(e)}), 401
+            print(f"❌ Auth xato: {e}")
+            return jsonify({"detail": str(e)}), 401
         return f(tg, *a, **k)
     return w
 
 
-@app.route("/health")
-def health(): return jsonify({"ok":True,"time":datetime.utcnow().isoformat()})
+@app.route("/api/auth/me", methods=["POST", "GET", "OPTIONS"])
+def api_me():
+    if request.method == "OPTIONS":
+        return jsonify({"ok": True}), 200
 
+    init_data = request.headers.get("X-Telegram-Init-Data", "")
+    print(f"🔍 /api/auth/me: initData={'bor' if init_data else 'YO_Q'}")
+    try:
+        tg = validate_init(init_data)
+    except ValueError as e:
+        print(f"❌ Auth xato: {e}")
+        return jsonify({"detail": str(e)}), 401
 
-@app.route("/api/auth/me", methods=["POST","GET","OPTIONS"])
-@auth_required
-def api_me(tg):
     create_or_update_user(tg)
     u = get_user(tg["id"])
     return jsonify({
@@ -826,7 +869,7 @@ def api_me(tg):
     })
 
 
-@app.route("/api/qr/create", methods=["POST","OPTIONS"])
+@app.route("/api/qr/create", methods=["POST", "OPTIONS"])
 @auth_required
 def api_create_qr(tg):
     body = request.get_json(silent=True) or {}
