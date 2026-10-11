@@ -5,15 +5,13 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <title>QR Master</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
-<!-- QR kutubxona — 2 ta zaxira CDN bilan -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script>
-// Zaxira: agar cdnjs ishlamasa, jsdelivr yuklanadi
+// Zaxira CDN: agar cdnjs ishlamasa
 if (typeof QRCode === 'undefined') {
   document.write('<script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"><\/script>');
 }
 </script>
-<!-- MONETAG SDK -->
 <script src="//libtl.com/sdk.js" data-zone="11990967" data-sdk="show_11990967"></script>
 <style>
 :root{--bg:#fff;--fg:#0f172a;--muted:#64748b;--card:#f1f5f9;--primary:#6366f1;
@@ -35,8 +33,7 @@ display:flex;align-items:center;justify-content:center;color:#fff;font-weight:70
 .hero{margin:16px 0;padding:22px;border-radius:var(--radius);
 background:linear-gradient(135deg,var(--primary),var(--primary-2));color:#fff}
 .hero h2{font-size:20px;margin-bottom:6px}.hero p{font-size:13px;opacity:.9}
-.section-title{font-size:15px;font-weight:700;margin:22px 0 12px;display:flex;
-justify-content:space-between;align-items:center}
+.section-title{font-size:15px;font-weight:700;margin:22px 0 12px}
 .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
 .type-card{background:var(--card);border:none;border-radius:14px;padding:14px 8px;
 display:flex;flex-direction:column;align-items:center;gap:6px;cursor:pointer;
@@ -80,8 +77,11 @@ font-weight:600;max-width:85vw;text-align:center}
 .hist-item{display:flex;align-items:center;gap:12px;padding:14px;
 background:var(--card);border-radius:14px;margin-bottom:8px}
 .hist-info{flex:1;min-width:0}
-.hist-info h4{font-size:14px;font-weight:700;margin-bottom:3px}
+.hist-info h4{font-size:14px;font-weight:700;margin-bottom:3px;
+white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .hist-info p{font-size:12px;color:var(--muted)}
+.icon-btn{width:34px;height:34px;border-radius:10px;border:none;background:var(--bg);
+color:var(--fg);cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center}
 .profile-card{padding:20px;border-radius:var(--radius);
 background:linear-gradient(135deg,var(--primary),var(--primary-2));color:#fff;
 text-align:center;margin-bottom:16px}
@@ -90,9 +90,9 @@ margin:0 auto 10px;display:flex;align-items:center;justify-content:center;
 font-size:28px;font-weight:800}
 .profile-card h3{font-size:17px;margin-bottom:4px}
 .profile-card p{font-size:13px;opacity:.85}
-.stats{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:16px}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:16px}
 .stat{background:rgba(255,255,255,.15);padding:12px;border-radius:12px}
-.stat b{display:block;font-size:22px;font-weight:800}
+.stat b{display:block;font-size:20px;font-weight:800}
 .stat span{font-size:11px;opacity:.85}
 .loading{position:fixed;inset:0;background:rgba(15,23,42,.55);display:none;
 align-items:center;justify-content:center;z-index:2000}
@@ -112,7 +112,7 @@ border-top-color:#fff;border-radius:50%;animation:sp .8s linear infinite}
 <div class="main">
   <div class="page active" id="page-home">
     <div class="hero"><h2>🎯 Universal QR Platforma</h2>
-    <p>13+ turdagi QR kod yaratish va dizayn</p></div>
+    <p>12+ turdagi QR kod yaratish va dizayn</p></div>
     <div class="section-title">QR turlari</div>
     <div class="grid" id="typeGrid"></div>
     <div class="section-title">So'nggi QR kodlar</div>
@@ -144,23 +144,6 @@ border-top-color:#fff;border-radius:50%;animation:sp .8s linear infinite}
     </div>
   </div>
 
-  <div class="page" id="page-ads">
-    <div class="section-title">📢 Reklama</div>
-    <div class="hero">
-      <h2>🎁 Mukofot olish</h2>
-      <p>Qisqa reklama ko'rib qo'shimcha imkoniyat oling</p>
-    </div>
-    <button class="btn btn-primary" id="watchAdBtn" style="margin-bottom:14px">
-      ▶️ Reklama ko'rish
-    </button>
-    <div class="hist-item">
-      <div class="hist-info">
-        <h4>Ko'rilgan reklamalar</h4>
-        <p id="adsCount">0</p>
-      </div>
-    </div>
-  </div>
-
   <div class="page" id="page-history">
     <div class="section-title">🕐 Tarix</div>
     <div id="historyList"></div>
@@ -172,17 +155,17 @@ border-top-color:#fff;border-radius:50%;animation:sp .8s linear infinite}
       <h3 id="profileName">Foydalanuvchi</h3>
       <p id="profileUsername">@username</p>
       <div class="stats">
-        <div class="stat"><b id="statCreated">0</b><span>Yaratilgan</span></div>
+        <div class="stat"><b id="statQR">0</b><span>QR kodlar</span></div>
         <div class="stat"><b id="statAds">0</b><span>Reklama</span></div>
+        <div class="stat"><b id="statRef">0</b><span>Referallar</span></div>
       </div>
     </div>
-    <button class="btn btn-ghost" id="themeBtn">🌗 Mavzu</button>
+    <button class="btn btn-ghost" id="themeBtn">🌗 Mavzuni almashtirish</button>
   </div>
 </div>
 
 <nav class="nav">
   <button class="nav-btn active" data-page="home"><span class="ico">🏠</span>Asosiy</button>
-  <button class="nav-btn" data-page="ads"><span class="ico">📢</span>Reklama</button>
   <button class="nav-btn" data-page="history"><span class="ico">🕐</span>Tarix</button>
   <button class="nav-btn" data-page="profile"><span class="ico">👤</span>Profil</button>
 </nav>
@@ -192,9 +175,11 @@ border-top-color:#fff;border-radius:50%;animation:sp .8s linear infinite}
 
 <script>
 // ═══════════════════════════════════════════════════════════
-// SOZLAMALAR
+// MUHIM: RENDER URL ni shu yerga yozing!
 // ═══════════════════════════════════════════════════════════
-const API_BASE = "";   // bo'sh — chunki bot.py bir xil domen
+const API_BASE = "https://qr-master-xxxx.onrender.com";
+// ═══════════════════════════════════════════════════════════
+
 const MONETAG_ZONE = "11990967";
 
 // ═══════════════════════════════════════════════════════════
@@ -222,7 +207,6 @@ const AdManager = {
 // ═══════════════════════════════════════════════════════════
 const App = {
   currentType: 'universal',
-  qrCodeObj: null,
   currentData: null,
   initData: '',
   me: null,
@@ -246,12 +230,15 @@ const App = {
     if (this.initData) {
       try {
         this.me = await this.api('/api/auth/me', 'POST');
+        document.getElementById('statQR').textContent = this.me.qr_count || 0;
+        document.getElementById('statAds').textContent = this.me.ad_count || 0;
+        document.getElementById('statRef').textContent = this.me.referrals || 0;
         await this.loadHistory();
-      } catch (e) { console.warn('API:', e); }
+      } catch (e) {
+        console.warn('API:', e.message);
+        this.toast('Backend bilan aloqa yo\'q!', 'error');
+      }
     }
-
-    // URL hash
-    if (location.hash === '#ads') this.goPage('ads');
   },
 
   async api(path, method = 'GET', body = null) {
@@ -390,7 +377,7 @@ const App = {
       const container = document.getElementById('qrContainer');
       container.innerHTML = '';
 
-      this.qrCodeObj = new QRCode(container, {
+      new QRCode(container, {
         text: data,
         width: size,
         height: size,
@@ -412,7 +399,7 @@ const App = {
 
   download() {
     const canvas = document.querySelector('#qrContainer canvas');
-    if (!canvas) return this.toast('QR kod yo\'q', 'error');
+    if (!canvas) return this.toast("QR kod yo'q", 'error');
     const a = document.createElement('a');
     a.href = canvas.toDataURL('image/png');
     a.download = `qrmaster-${Date.now()}.png`;
@@ -431,6 +418,10 @@ const App = {
       });
       this.toast('Saqlandi 💾', 'success');
       await this.loadHistory();
+      if (this.me) {
+        this.me.qr_count = res.total_qr;
+        document.getElementById('statQR').textContent = res.total_qr;
+      }
 
       if (res.show_ad) {
         this.showLoading(false);
@@ -447,7 +438,10 @@ const App = {
           if (watched) {
             await this.api('/api/qr/ad_complete', 'POST', {});
             this.toast('🎁 Rahmat!', 'success');
-            this.loadHistory();
+            if (this.me) {
+              this.me.ad_count++;
+              document.getElementById('statAds').textContent = this.me.ad_count;
+            }
           } else {
             this.toast("Reklama ko'rilmadi", 'info');
           }
@@ -466,8 +460,6 @@ const App = {
       const list = await this.api('/api/qr/history');
       this.renderHistory(list);
       this.renderRecent(list);
-      document.getElementById('statCreated').textContent = list.length;
-      if (this.me) document.getElementById('statAds').textContent = 0;
     } catch (e) { console.warn(e); }
   },
 
@@ -490,10 +482,26 @@ const App = {
       el.innerHTML = `<div class="empty"><span class="ico">🕐</span>Tarix bo'sh</div>`;
       return;
     }
-    el.innerHTML = list.map(h => `<div class="hist-item"><div class="hist-info">
-      <h4>${h.name}</h4>
-      <p>${h.qr_type} · ${new Date(h.created_at).toLocaleString('uz')}</p>
-    </div></div>`).join('');
+    el.innerHTML = list.map(h => `<div class="hist-item">
+      <div class="hist-info">
+        <h4>${h.name}</h4>
+        <p>${h.qr_type} · ${new Date(h.created_at).toLocaleString('uz')}</p>
+      </div>
+      <button class="icon-btn" onclick="App.delQr(${h.id})">🗑</button>
+    </div>`).join('');
+  },
+
+  async delQr(id) {
+    if (!confirm("O'chirilsinmi?")) return;
+    try {
+      await this.api('/api/qr/' + id, 'DELETE');
+      this.toast("O'chirildi", 'info');
+      await this.loadHistory();
+      if (this.me) {
+        this.me.qr_count = Math.max(0, this.me.qr_count - 1);
+        document.getElementById('statQR').textContent = this.me.qr_count;
+      }
+    } catch (e) { this.toast(e.message, 'error'); }
   },
 
   bindProfile() {
@@ -508,19 +516,6 @@ const App = {
     document.getElementById('backBtn').onclick = () => this.goPage('home');
     document.getElementById('dlBtn').onclick = () => this.download();
     document.getElementById('saveHistBtn').onclick = () => this.saveToHistory();
-    document.getElementById('watchAdBtn').onclick = async () => {
-      this.showLoading(true);
-      const ok = await AdManager.show();
-      this.showLoading(false);
-      if (ok) {
-        try { await this.api('/api/qr/ad_complete', 'POST', {}); } catch {}
-        const cur = parseInt(document.getElementById('adsCount').textContent) || 0;
-        document.getElementById('adsCount').textContent = cur + 1;
-        this.toast('🎁 Rahmat!', 'success');
-      } else {
-        this.toast("Reklama ko'rilmadi", 'info');
-      }
-    };
   },
 
   bindNav() {
