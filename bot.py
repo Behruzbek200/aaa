@@ -1,7 +1,14 @@
 # -*- coding: utf-8 -*-
 """
-QR MASTER — 20+ turdagi QR kod yaratish
+QR MASTER — To'liq versiya
 Ishga tushirish: python bot.py
+
+Tuzilma:
+  1-QISM: Sozlamalar + Database schema + DB funksiyalari
+  2-QISM: Bot setup + Obuna + Reply keyboard + User handlers
+  3-QISM: Callback + Admin panel + Kanal qo'shish
+  4-QISM: Flask + HTML Mini App
+  5-QISM: JavaScript + API routes + Ishga tushirish
 """
 import os, sys, hmac, hashlib, json, threading, time, sqlite3, io
 from datetime import datetime
@@ -38,12 +45,12 @@ def install_packages():
         print("✅ O'rnatildi! Qayta ishga tushirish...")
         time.sleep(2)
         os.execv(sys.executable, [sys.executable] + sys.argv)
-    print("✅ Barcha kutubxonalar tayyor")
+    print("✅ Kutubxonalar tayyor")
 
 
 install_packages()
 
-# Import asosiy kutubxonalar
+# Asosiy importlar
 from flask import Flask, request, jsonify, Response, send_from_directory
 from flask_cors import CORS
 import telebot
@@ -58,7 +65,7 @@ import qrcode
 
 
 # ═══════════════════════════════════════════════════════════════
-# SOZLAMALAR — RENDER ENVIRONMENT VARIABLES ORQALI
+# SOZLAMALAR — RENDER ENVIRONMENT VARIABLES
 # ═══════════════════════════════════════════════════════════════
 BOT_TOKEN    = os.getenv("BOT_TOKEN", "")
 BOT_USERNAME = ""
@@ -79,10 +86,11 @@ os.makedirs(os.path.dirname(DB_FILE) or ".", exist_ok=True)
 print("=" * 55)
 print("🚀 QR MASTER")
 print("=" * 55)
-print(f"📁 DB: {DB_FILE}")
-print(f"📁 Upload: {UPLOAD_DIR}")
-print(f"🌐 URL: {WEBAPP_URL}")
-print(f"👤 Admin: {ADMIN_IDS}")
+print(f"📁 DB:       {DB_FILE}")
+print(f"📁 Upload:   {UPLOAD_DIR}")
+print(f"🌐 URL:      {WEBAPP_URL}")
+print(f"👤 Admin:    {ADMIN_IDS}")
+print(f"💰 Monetag:  {MONETAG_ZONE}")
 print("=" * 55)
 
 
@@ -109,7 +117,7 @@ def init_database():
         last_active TEXT
     )""")
 
-    # QR tarixi
+    # QR kodlar tarixi
     c.execute("""CREATE TABLE IF NOT EXISTS qr_history(
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER,
@@ -165,14 +173,14 @@ def init_database():
         created_at TEXT
     )""")
 
-    # Adminlar
+    # Adminlar (qo'shimchalar)
     c.execute("""CREATE TABLE IF NOT EXISTS admins(
         telegram_id INTEGER PRIMARY KEY,
         added_by INTEGER,
         created_at TEXT
     )""")
 
-    # Kutilayotgan obunalar (yopiq kanallar uchun)
+    # Kutilayotgan obunalar (yopiq kanallar)
     c.execute("""CREATE TABLE IF NOT EXISTS pending_subs(
         user_id INTEGER,
         channel_id INTEGER,
@@ -188,11 +196,11 @@ def init_database():
     # Standart sozlamalar
     defaults = {
         "force_sub_enabled": "0",
-        "referral_enabled": "1",
-        "monetag_enabled": "1",
-        "free_qr_count": "1",
-        "qr_per_ad": "3",
-        "invite_bonus_qr": "10",
+        "referral_enabled":  "1",
+        "monetag_enabled":   "1",
+        "free_qr_count":     "1",
+        "qr_per_ad":         "3",
+        "invite_bonus_qr":   "10",
     }
     for key, val in defaults.items():
         c.execute("INSERT OR IGNORE INTO settings(key, value) VALUES(?, ?)", (key, val))
@@ -204,22 +212,12 @@ def init_database():
 
 init_database()
 
-# ───────────────────────────────────────────────────────────────
-# KEYINGI QISM: 2-QISM (Database funksiyalari)
-# ───────────────────────────────────────────────────────────────
+
 # ═══════════════════════════════════════════════════════════════
 # DATABASE YORDAMCHI FUNKSIYALAR
 # ═══════════════════════════════════════════════════════════════
-
-def db():
-    """Yangi database ulanish."""
-    conn = sqlite3.connect(DB_FILE)
-    conn.row_factory = sqlite3.Row
-    return conn
-
-
 def q(sql, args=(), one=False):
-    """Query bajarish."""
+    """SELECT query — ro'yxat yoki bitta qaytaradi."""
     conn = sqlite3.connect(DB_FILE)
     conn.row_factory = sqlite3.Row
     try:
@@ -234,7 +232,7 @@ def q(sql, args=(), one=False):
 
 
 def q_exec(sql, args=()):
-    """Execute (INSERT/UPDATE/DELETE) — ID qaytaradi."""
+    """INSERT/UPDATE/DELETE — lastrowid qaytaradi."""
     conn = sqlite3.connect(DB_FILE)
     try:
         cursor = conn.execute(sql, args)
@@ -244,9 +242,7 @@ def q_exec(sql, args=()):
         conn.close()
 
 
-# ───────────────────────────────────────────────────────────────
-# SOZLAMALAR
-# ───────────────────────────────────────────────────────────────
+# ─── SOZLAMALAR ───
 def get_setting(key, default=""):
     r = q("SELECT value FROM settings WHERE key=?", (key,), one=True)
     return r["value"] if r else default
@@ -257,18 +253,14 @@ def set_setting(key, value):
 
 
 def get_int_setting(key, default=0):
-    """Raqamli sozlamalar uchun."""
     try:
         return int(get_setting(key, str(default)))
     except (ValueError, TypeError):
         return default
 
 
-# ───────────────────────────────────────────────────────────────
-# ADMINLAR
-# ───────────────────────────────────────────────────────────────
+# ─── ADMINLAR ───
 def is_admin(uid):
-    """Admin ekanligini tekshirish."""
     if uid in ADMIN_IDS:
         return True
     r = q("SELECT 1 FROM admins WHERE telegram_id=?", (uid,), one=True)
@@ -276,7 +268,6 @@ def is_admin(uid):
 
 
 def add_admin(uid, added_by=0):
-    """Yangi admin qo'shish."""
     q_exec(
         "INSERT OR IGNORE INTO admins(telegram_id, added_by, created_at) VALUES(?, ?, ?)",
         (uid, added_by, datetime.utcnow().isoformat())
@@ -284,132 +275,69 @@ def add_admin(uid, added_by=0):
 
 
 def remove_admin(uid):
-    """Adminni o'chirish."""
     q_exec("DELETE FROM admins WHERE telegram_id=?", (uid,))
 
 
 def get_all_admins():
-    """Barcha adminlar ro'yxati."""
     extras = q("SELECT telegram_id FROM admins")
     return list(ADMIN_IDS) + [r["telegram_id"] for r in extras]
 
 
-# ───────────────────────────────────────────────────────────────
-# FOYDALANUVCHILAR
-# ───────────────────────────────────────────────────────────────
+# ─── FOYDALANUVCHILAR ───
 def get_user(uid):
-    """Foydalanuvchini olish."""
     return q("SELECT * FROM users WHERE telegram_id=?", (uid,), one=True)
 
 
 def upsert_user(tg_data):
-    """Foydalanuvchi yaratish yoki yangilash."""
     uid = tg_data["id"]
     now = datetime.utcnow().isoformat()
-
     existing = q("SELECT 1 FROM users WHERE telegram_id=?", (uid,), one=True)
     if not existing:
         q_exec(
             """INSERT INTO users(telegram_id, username, first_name, last_name,
                 language, created_at, last_active)
                 VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            (
-                uid,
-                tg_data.get("username"),
-                tg_data.get("first_name"),
-                tg_data.get("last_name"),
-                tg_data.get("language_code", "uz"),
-                now,
-                now
-            )
+            (uid, tg_data.get("username"), tg_data.get("first_name"),
+             tg_data.get("last_name"), tg_data.get("language_code", "uz"), now, now)
         )
-        return True  # yangi
-    else:
-        q_exec(
-            """UPDATE users SET username=?, first_name=?, last_name=?, last_active=?
-                WHERE telegram_id=?""",
-            (
-                tg_data.get("username"),
-                tg_data.get("first_name"),
-                tg_data.get("last_name"),
-                now,
-                uid
-            )
-        )
-        return False  # mavjud
-
-
-def update_user_status(uid, status):
-    """Foydalanuvchi statusini o'zgartirish."""
-    q_exec("UPDATE users SET status=? WHERE telegram_id=?", (status, uid))
-
-
-def update_user_language(uid, lang):
-    """Tilni o'zgartirish."""
-    q_exec("UPDATE users SET language=? WHERE telegram_id=?", (lang, uid))
-
-
-def get_users_paginated(offset=0, limit=10):
-    """Foydalanuvchilar ro'yxati (sahifalar)."""
-    return q(
-        "SELECT * FROM users ORDER BY last_active DESC LIMIT ? OFFSET ?",
-        (limit, offset)
+        return True
+    q_exec(
+        """UPDATE users SET username=?, first_name=?, last_name=?, last_active=?
+            WHERE telegram_id=?""",
+        (tg_data.get("username"), tg_data.get("first_name"),
+         tg_data.get("last_name"), now, uid)
     )
+    return False
 
 
 def count_users():
-    """Jami foydalanuvchilar soni."""
     r = q("SELECT COUNT(*) as c FROM users", one=True)
     return r["c"] if r else 0
 
 
 def count_users_today():
-    """Bugun ro'yxatdan o'tganlar."""
-    r = q(
-        "SELECT COUNT(*) as c FROM users WHERE date(created_at)=date('now')",
-        one=True
-    )
+    r = q("SELECT COUNT(*) as c FROM users WHERE date(created_at)=date('now')", one=True)
     return r["c"] if r else 0
 
 
-def search_users(query):
-    """Foydalanuvchilarni qidirish."""
-    like = f"%{query}%"
-    if query.isdigit():
-        return q(
-            """SELECT * FROM users WHERE telegram_id = ?
-                OR username LIKE ? OR first_name LIKE ?
-                ORDER BY last_active DESC LIMIT 20""",
-            (int(query), like, like)
-        )
-    return q(
-        "SELECT * FROM users WHERE username LIKE ? OR first_name LIKE ? LIMIT 20",
-        (like, like)
-    )
+def get_users_paginated(offset=0, limit=10):
+    return q("SELECT * FROM users ORDER BY last_active DESC LIMIT ? OFFSET ?",
+             (limit, offset))
 
 
-# ───────────────────────────────────────────────────────────────
-# QR KODLAR
-# ───────────────────────────────────────────────────────────────
+# ─── QR KODLAR ───
 def add_qr(uid, qr_type, name, qr_data):
-    """QR yozuvini qo'shish."""
     q_exec(
         """INSERT INTO qr_history(user_id, qr_type, name, qr_data, payload_hash, created_at)
             VALUES (?, ?, ?, ?, ?, ?)""",
-        (
-            uid,
-            qr_type,
-            name,
-            qr_data,
-            hashlib.sha256(qr_data.encode()).hexdigest(),
-            datetime.utcnow().isoformat()
-        )
+        (uid, qr_type, name, qr_data,
+         hashlib.sha256(qr_data.encode()).hexdigest(),
+         datetime.utcnow().isoformat())
     )
     q_exec("UPDATE users SET qr_count = qr_count + 1 WHERE telegram_id=?", (uid,))
 
 
 def get_qrs(uid, limit=50, offset=0):
-    """Foydalanuvchi QR kodlari."""
     return q(
         """SELECT id, qr_type, name, qr_data, created_at
             FROM qr_history WHERE user_id=?
@@ -419,48 +347,31 @@ def get_qrs(uid, limit=50, offset=0):
 
 
 def get_qr(qid, uid):
-    """Bitta QR olish."""
-    return q(
-        "SELECT * FROM qr_history WHERE id=? AND user_id=?",
-        (qid, uid),
-        one=True
-    )
+    return q("SELECT * FROM qr_history WHERE id=? AND user_id=?",
+             (qid, uid), one=True)
 
 
 def count_qrs(uid):
-    """Jami QR soni."""
     r = q("SELECT COUNT(*) as c FROM qr_history WHERE user_id=?", (uid,), one=True)
     return r["c"] if r else 0
 
 
-def delete_qr(qid, uid):
-    """QR o'chirish."""
-    existing = q(
-        "SELECT 1 FROM qr_history WHERE id=? AND user_id=?",
-        (qid, uid),
-        one=True
-    )
-    if existing:
-        q_exec("DELETE FROM qr_history WHERE id=?", (qid,))
-        q_exec(
-            "UPDATE users SET qr_count = MAX(0, qr_count - 1) WHERE telegram_id=?",
-            (uid,)
-        )
-        return True
-    return False
-
-
 def count_all_qrs():
-    """Umumiy QR soni (admin uchun)."""
     r = q("SELECT COUNT(*) as c FROM qr_history", one=True)
     return r["c"] if r else 0
 
 
-# ───────────────────────────────────────────────────────────────
-# REFERALLAR
-# ───────────────────────────────────────────────────────────────
+def delete_qr(qid, uid):
+    existing = q("SELECT 1 FROM qr_history WHERE id=? AND user_id=?", (qid, uid), one=True)
+    if existing:
+        q_exec("DELETE FROM qr_history WHERE id=?", (qid,))
+        q_exec("UPDATE users SET qr_count = MAX(0, qr_count - 1) WHERE telegram_id=?", (uid,))
+        return True
+    return False
+
+
+# ─── REFERALLAR ───
 def add_referral(referrer_id, referred_id):
-    """Referal qo'shish."""
     if referrer_id == referred_id:
         return False
     try:
@@ -469,27 +380,19 @@ def add_referral(referrer_id, referred_id):
             (referrer_id, referred_id, datetime.utcnow().isoformat())
         )
         bonus = get_int_setting("invite_bonus_qr", 10)
-        q_exec(
-            "UPDATE users SET unlock_count = unlock_count + ? WHERE telegram_id=?",
-            (bonus, referrer_id)
-        )
+        q_exec("UPDATE users SET unlock_count = unlock_count + ? WHERE telegram_id=?",
+               (bonus, referrer_id))
         return True
     except sqlite3.IntegrityError:
         return False
 
 
 def count_referrals(uid):
-    """Referallar soni."""
-    r = q(
-        "SELECT COUNT(*) as c FROM referrals WHERE referrer_id=?",
-        (uid,),
-        one=True
-    )
+    r = q("SELECT COUNT(*) as c FROM referrals WHERE referrer_id=?", (uid,), one=True)
     return r["c"] if r else 0
 
 
 def get_referrals(uid, limit=50, offset=0):
-    """Referallar ro'yxati."""
     return q(
         """SELECT r.*, u.first_name, u.username
             FROM referrals r
@@ -500,21 +403,20 @@ def get_referrals(uid, limit=50, offset=0):
     )
 
 
-# ───────────────────────────────────────────────────────────────
-# MAJBURIY OBUNA KANALLARI
-# ───────────────────────────────────────────────────────────────
+# ─── KANALLAR ───
 def get_channels():
-    """Faol kanallar."""
     return q("SELECT * FROM channels WHERE is_active=1 ORDER BY id")
 
 
 def get_all_channels():
-    """Barcha kanallar (admin uchun)."""
     return q("SELECT * FROM channels ORDER BY id")
 
 
+def get_channel(ch_id):
+    return q("SELECT * FROM channels WHERE id=?", (ch_id,), one=True)
+
+
 def add_channel(chat_id, name, username=None, invite_link=None, check_mode="member"):
-    """Kanal qo'shish."""
     return q_exec(
         """INSERT INTO channels(chat_id, name, username, invite_link, check_mode)
             VALUES (?, ?, ?, ?, ?)""",
@@ -523,20 +425,21 @@ def add_channel(chat_id, name, username=None, invite_link=None, check_mode="memb
 
 
 def delete_channel(ch_id):
-    """Kanal o'chirish."""
     q_exec("DELETE FROM channels WHERE id=?", (ch_id,))
 
 
-def get_channel(ch_id):
-    """Bitta kanal."""
-    return q("SELECT * FROM channels WHERE id=?", (ch_id,), one=True)
+def update_channel_username(ch_id, username):
+    """Kanal username ni yangilash (private → public o'zgarganda)."""
+    q_exec("UPDATE channels SET username=? WHERE id=?", (username, ch_id))
 
 
-# ───────────────────────────────────────────────────────────────
-# PENDING (kutilayotgan obunalar — yopiq kanallar)
-# ───────────────────────────────────────────────────────────────
+def update_channel_mode(ch_id, mode):
+    """Kanal rejimini yangilash."""
+    q_exec("UPDATE channels SET check_mode=? WHERE id=?", (mode, ch_id))
+
+
+# ─── PENDING (yopiq kanal so'rovlari) ───
 def save_pending_sub(uid, ch_id):
-    """So'rov yuborilganini qayd etish."""
     q_exec(
         """INSERT OR REPLACE INTO pending_subs(user_id, channel_id, requested_at)
             VALUES (?, ?, ?)""",
@@ -545,45 +448,29 @@ def save_pending_sub(uid, ch_id):
 
 
 def has_pending_sub(uid, ch_id):
-    """So'rov allaqachon yuborilganmi."""
-    r = q(
-        "SELECT 1 FROM pending_subs WHERE user_id=? AND channel_id=?",
-        (uid, ch_id),
-        one=True
-    )
+    r = q("SELECT 1 FROM pending_subs WHERE user_id=? AND channel_id=?",
+          (uid, ch_id), one=True)
     return bool(r)
 
 
-# ───────────────────────────────────────────────────────────────
-# REKLAMA HODISALARI
-# ───────────────────────────────────────────────────────────────
+# ─── REKLAMA ───
 def log_ad_event(uid, ad_format="rewarded", event_type="completed"):
-    """Reklama hodisasini qayd etish."""
     q_exec(
         """INSERT INTO ad_events(user_id, format, event_type, created_at)
             VALUES (?, ?, ?, ?)""",
         (uid, ad_format, event_type, datetime.utcnow().isoformat())
     )
-    # Foydalanuvchi statistikasi
     if event_type == "completed":
         q_exec("UPDATE users SET ad_count = ad_count + 1 WHERE telegram_id=?", (uid,))
 
 
 def count_ad_events(event_type="completed"):
-    """Reklama hodisalari soni."""
-    r = q(
-        "SELECT COUNT(*) as c FROM ad_events WHERE event_type=?",
-        (event_type,),
-        one=True
-    )
+    r = q("SELECT COUNT(*) as c FROM ad_events WHERE event_type=?", (event_type,), one=True)
     return r["c"] if r else 0
 
 
-# ───────────────────────────────────────────────────────────────
-# YORDAM XABARLARI
-# ───────────────────────────────────────────────────────────────
+# ─── YORDAM XABARLARI ───
 def save_support_message(uid, message):
-    """Yordam xabari saqlash."""
     return q_exec(
         "INSERT INTO support_messages(user_id, message, created_at) VALUES (?, ?, ?)",
         (uid, message, datetime.utcnow().isoformat())
@@ -591,7 +478,6 @@ def save_support_message(uid, message):
 
 
 def get_open_support_messages(limit=10):
-    """Ochiq yordam xabarlari."""
     return q(
         """SELECT * FROM support_messages WHERE status='open'
             ORDER BY created_at DESC LIMIT ?""",
@@ -600,23 +486,17 @@ def get_open_support_messages(limit=10):
 
 
 def get_support_message(mid):
-    """Bitta xabar."""
     return q("SELECT * FROM support_messages WHERE id=?", (mid,), one=True)
 
 
 def reply_support_message(mid, reply):
-    """Javob yozish."""
-    q_exec(
-        "UPDATE support_messages SET admin_reply=?, status='answered' WHERE id=?",
-        (reply, mid)
-    )
+    q_exec("UPDATE support_messages SET admin_reply=?, status='answered' WHERE id=?",
+           (reply, mid))
 
 
-# ───────────────────────────────────────────────────────────────
-# QR RASM YARATISH (Bot uchun)
-# ───────────────────────────────────────────────────────────────
+# ─── QR RASM YARATISH ───
 def make_qr_png(data):
-    """QR kodni PNG bytes sifatida qaytarish."""
+    """QR kodni PNG bytes sifatida qaytarish (bot uchun)."""
     qr = qrcode.QRCode(
         box_size=10,
         border=4,
@@ -631,27 +511,24 @@ def make_qr_png(data):
     return bio
 
 
-# ───────────────────────────────────────────────────────────────
-# STATISTIKA (Admin uchun)
-# ───────────────────────────────────────────────────────────────
+# ─── STATISTIKA ───
 def get_global_stats():
-    """Umumiy statistika."""
     return {
         "users_total": count_users(),
         "users_today": count_users_today(),
-        "qr_total": count_all_qrs(),
-        "ads_total": count_ad_events("completed"),
+        "qr_total":    count_all_qrs(),
+        "ads_total":   count_ad_events("completed"),
     }
 
 
 # ───────────────────────────────────────────────────────────────
-# KEYINGI QISM: 3-QISM (Telegram bot handlers)
+# KEYINGI QISM: 2-QISM (Bot setup + Obuna + Handlers)
 # ───────────────────────────────────────────────────────────────
 # ═══════════════════════════════════════════════════════════════
 # TELEGRAM BOT YARATISH
 # ═══════════════════════════════════════════════════════════════
 if not BOT_TOKEN:
-    print("❌ BOT_TOKEN bo'sh! Environment variable'ga qo'shing")
+    print("❌ BOT_TOKEN bo'sh! Environment variable qo'shing")
     sys.exit(1)
 
 bot = telebot.TeleBot(BOT_TOKEN, parse_mode="HTML")
@@ -665,7 +542,7 @@ def setup_bot():
         BOT_USERNAME = me.username
         print(f"✅ Bot: @{BOT_USERNAME}")
 
-        # Menu button (asosiy "🚀 QR Master" tugma)
+        # Menu button
         try:
             bot.set_chat_menu_button(
                 menu_button=MenuButtonWebApp(
@@ -675,9 +552,9 @@ def setup_bot():
             )
             print(f"✅ Menu button: {WEBAPP_URL}")
         except Exception as e:
-            print(f"⚠️ Menu button xato: {e}")
+            print(f"⚠️ Menu button: {e}")
 
-        # Bot description
+        # Description
         try:
             bot.set_my_description(
                 "QR Master — 20+ turdagi QR kod yaratish va saqlash boti.\n\n"
@@ -685,16 +562,16 @@ def setup_bot():
             )
             bot.set_my_short_description("Universal QR kod generator")
         except Exception as e:
-            print(f"⚠️ Description xato: {e}")
+            print(f"⚠️ Description: {e}")
 
-        # Komandalar
+        # Commands
         bot.set_my_commands([
             BotCommand("start", "🏠 Bosh menyu"),
             BotCommand("admin", "👑 Admin panel"),
             BotCommand("id", "🆔 Telegram ID"),
         ])
     except Exception as e:
-        print(f"⚠️ Setup xato: {e}")
+        print(f"⚠️ Setup: {e}")
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -705,7 +582,7 @@ def check_member_status(chat_id, user_id):
     Kanal a'zoligini tekshiradi.
     True  — a'zo
     False — a'zo emas
-    None  — tekshirib bo'lmadi (bot admin emas)
+    None  — tekshirib bo'lmadi (bot admin emas yoki xato)
     """
     try:
         m = bot.get_chat_member(chat_id, user_id)
@@ -744,13 +621,13 @@ def check_subscription(uid):
         if status is False:
             return False
 
-        # status is None — bot admin emas yoki xato
+        # status is None — bot admin emas
         if ch["check_mode"] == "request":
             if has_pending_sub(uid, ch["id"]):
                 continue
             return False
 
-        # "member" rejimi lekin bot admin emas — o'tkazib yuboramiz
+        # member rejimi lekin bot admin emas — o'tkazib yuboramiz
         continue
 
     return True
@@ -780,12 +657,9 @@ def sub_prompt(chat_id, uid):
         if status is True:
             continue
 
-        # Public kanal (username bor)
         if ch["username"]:
             uname = ch["username"].replace("@", "")
             kb.add(InlineKeyboardButton(f"📢 {ch['name']}", url=f"https://t.me/{uname}"))
-
-        # Private kanal (invite link)
         elif ch["invite_link"]:
             btn_text = "📨 So'rov yuborish" if ch["check_mode"] == "request" else f"📢 {ch['name']}"
             kb.add(InlineKeyboardButton(btn_text, url=ch["invite_link"]))
@@ -796,14 +670,14 @@ def sub_prompt(chat_id, uid):
 
 
 # ═══════════════════════════════════════════════════════════════
-# REPLY KEYBOARD
+# REPLY KEYBOARD — oddiy matn tugmalar (web_app yo'q!)
 # ═══════════════════════════════════════════════════════════════
 def main_menu():
-    """Asosiy menyu tugmalari."""
+    """Asosiy menyu — oddiy matn tugmalar."""
     kb = ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
     kb.add(
-        KeyboardButton("🧩 QR yaratish", web_app=WebAppInfo(url=WEBAPP_URL)),
-        KeyboardButton("🎬 Reklama / Unlock", web_app=WebAppInfo(url=WEBAPP_URL)),
+        KeyboardButton("🧩 QR yaratish"),
+        KeyboardButton("🎬 Reklama / Unlock"),
     )
     kb.add(
         KeyboardButton("📜 Mening QR larim"),
@@ -879,6 +753,61 @@ def cmd_id(m):
 
 
 # ═══════════════════════════════════════════════════════════════
+# QR YARATISH — INLINE WEBAPP TUGMA
+# ═══════════════════════════════════════════════════════════════
+@bot.message_handler(func=lambda m: m.text == "🧩 QR yaratish")
+def open_qr_app(m):
+    """QR yaratish — inline WebApp tugma."""
+    if not check_subscription(m.from_user.id):
+        sub_prompt(m.chat.id, m.from_user.id)
+        return
+
+    kb = InlineKeyboardMarkup()
+    kb.add(InlineKeyboardButton(
+        "🚀 QR Master ilovasini ochish",
+        web_app=WebAppInfo(url=WEBAPP_URL)
+    ))
+
+    bot.send_message(
+        m.chat.id,
+        "🎯 <b>QR kod yaratish</b>\n\n"
+        "Quyidagi tugma orqali Mini App'ni oching.\n"
+        "QR avtomatik saqlanadi! ✅",
+        reply_markup=kb
+    )
+
+
+# ═══════════════════════════════════════════════════════════════
+# REKLAMA — INLINE WEBAPP TUGMA
+# ═══════════════════════════════════════════════════════════════
+@bot.message_handler(func=lambda m: m.text == "🎬 Reklama / Unlock")
+def open_ads_app(m):
+    """Reklama — inline WebApp tugma."""
+    if not check_subscription(m.from_user.id):
+        sub_prompt(m.chat.id, m.from_user.id)
+        return
+
+    u = get_user(m.from_user.id)
+    unlock = u.get("unlock_count", 0) if u else 0
+    free = get_setting("free_qr_count", "1")
+
+    kb = InlineKeyboardMarkup()
+    kb.add(InlineKeyboardButton(
+        "🎬 Reklama sahifasini ochish",
+        web_app=WebAppInfo(url=WEBAPP_URL)
+    ))
+
+    bot.send_message(
+        m.chat.id,
+        f"🎬 <b>Reklama / Unlock</b>\n\n"
+        f"🎁 Bepul limit: <b>{free} ta</b>\n"
+        f"🔓 Unlock: <b>{unlock} ta</b>\n\n"
+        "Reklama ko'rib <b>+3 QR</b> unlock oling!",
+        reply_markup=kb
+    )
+
+
+# ═══════════════════════════════════════════════════════════════
 # MENING QR LARIM
 # ═══════════════════════════════════════════════════════════════
 @bot.message_handler(func=lambda m: m.text == "📜 Mening QR larim")
@@ -894,12 +823,16 @@ def show_user_qrs(chat_id, uid, offset):
     """Foydalanuvchi QR ro'yxati."""
     total = count_qrs(uid)
     if total == 0:
+        kb = InlineKeyboardMarkup()
+        kb.add(InlineKeyboardButton(
+            "🚀 QR yaratish",
+            web_app=WebAppInfo(url=WEBAPP_URL)
+        ))
         bot.send_message(
             chat_id,
-            "📜 Sizda hali QR kodlar yo'q.\n\n🧩 Mini App orqali yarating!",
-            reply_markup=InlineKeyboardMarkup().add(
-                InlineKeyboardButton("🚀 QR yaratish", web_app=WebAppInfo(url=WEBAPP_URL))
-            )
+            "📜 Sizda hali QR kodlar yo'q.\n\n"
+            "🧩 Mini App orqali yarating!",
+            reply_markup=kb
         )
         return
 
@@ -1045,7 +978,7 @@ def save_support(message):
 
 
 # ═══════════════════════════════════════════════════════════════
-# ADMIN PANEL MENYUSI
+# ADMIN PANEL MENYUSI (funksiya keyingi qismda to'liq)
 # ═══════════════════════════════════════════════════════════════
 def show_admin_menu(chat_id):
     kb = InlineKeyboardMarkup(row_width=2)
@@ -1067,6 +1000,9 @@ def show_admin_menu(chat_id):
     bot.send_message(chat_id, "👑 <b>ADMIN PANEL</b>", reply_markup=kb)
 
 
+# ───────────────────────────────────────────────────────────────
+# KEYINGI QISM: 3-QISM (Callback + Admin panel + Kanal qo'shish)
+# ───────────────────────────────────────────────────────────────
 # ═══════════════════════════════════════════════════════════════
 # CALLBACK HANDLERS
 # ═══════════════════════════════════════════════════════════════
@@ -1088,7 +1024,6 @@ def on_callback(call):
                 pass
             bot.send_message(uid, "🏠 Bosh menyu:", reply_markup=main_menu())
         else:
-            # Yopiq kanal uchun "so'rov yubordim" belgilash
             marked = False
             for ch in get_channels():
                 if check_member_status(ch["chat_id"], uid) is None and ch["check_mode"] == "request":
@@ -1152,6 +1087,7 @@ def on_callback(call):
     elif not is_admin(uid):
         return
 
+    # ─── STATISTIKA ───
     elif data == "adm_stats":
         s = get_global_stats()
         text = (
@@ -1165,6 +1101,7 @@ def on_callback(call):
             InlineKeyboardButton("🔙 Orqaga", callback_data="adm_back"))
         bot.edit_message_text(text, uid, call.message.message_id, reply_markup=kb)
 
+    # ─── FOYDALANUVCHILAR ───
     elif data.startswith("adm_users:"):
         offset = int(data.split(":")[1])
         total = count_users()
@@ -1190,6 +1127,7 @@ def on_callback(call):
         kb.add(InlineKeyboardButton("🔙 Orqaga", callback_data="adm_back"))
         bot.edit_message_text(text, uid, call.message.message_id, reply_markup=kb)
 
+    # ─── BROADCAST ───
     elif data == "adm_bc":
         msg = bot.send_message(uid, "📣 Barcha foydalanuvchilarga yuboriladigan xabar:")
         bot.register_next_step_handler(msg, confirm_broadcast)
@@ -1211,6 +1149,7 @@ def on_callback(call):
             uid, status_msg.message_id
         )
 
+    # ─── MAJBURIY OBUNA ───
     elif data == "adm_subs":
         show_subscription_menu(uid, call.message.message_id)
 
@@ -1223,9 +1162,14 @@ def on_callback(call):
         msg = bot.send_message(
             uid,
             "📢 <b>Kanal qo'shish</b>\n\n"
-            "Formatlar:\n"
-            "<code>@username|Nomi|member</code> — Ommaviy kanal\n"
-            "<code>https://t.me/+XXX|Nomi|request</code> — Yopiq kanal"
+            "3 xil usul:\n\n"
+            "1️⃣ <b>Public kanal</b> — yuboring:\n"
+            "<code>@mening_kanalim</code>\n\n"
+            "2️⃣ <b>Yopiq kanal</b> — invite link yuboring:\n"
+            "<code>https://t.me/+AbCdEfGhIjK</code>\n\n"
+            "3️⃣ <b>Forward usuli</b> — kanaldagi istalgan xabarni "
+            "shu chatga <b>forward</b> qiling\n\n"
+            "⚠️ <b>Muhim:</b> Bot kanalga <b>admin</b> qilingan bo'lishi shart!"
         )
         bot.register_next_step_handler(msg, add_channel_step)
 
@@ -1235,6 +1179,7 @@ def on_callback(call):
         bot.answer_callback_query(call.id, "✅ O'chirildi")
         show_subscription_menu(uid, call.message.message_id)
 
+    # ─── ADMINLAR ───
     elif data == "adm_admins":
         all_admins = get_all_admins()
         text = "👑 <b>Adminlar</b>\n\n"
@@ -1244,7 +1189,6 @@ def on_callback(call):
 
         kb = InlineKeyboardMarkup()
         kb.add(InlineKeyboardButton("➕ Admin qo'shish", callback_data="adm_add_admin"))
-        # O'chirish tugmalari (faqat qo'shilgan adminlar uchun)
         extras = q("SELECT telegram_id FROM admins")
         for e in extras:
             kb.add(InlineKeyboardButton(
@@ -1260,9 +1204,17 @@ def on_callback(call):
 
     elif data.startswith("adm_rm_admin:"):
         aid = int(data.split(":")[1])
-        remove_admin(aid)
-        bot.answer_callback_query(call.id, "✅ O'chirildi")
+        if aid in ADMIN_IDS:
+            bot.answer_callback_query(call.id, "❌ Asosiy adminni o'chirib bo'lmaydi",
+                                     show_alert=True)
+        else:
+            remove_admin(aid)
+            bot.answer_callback_query(call.id, "✅ O'chirildi")
+            # Refresh
+            call.data = "adm_admins"
+            on_callback(call)
 
+    # ─── XABARLAR ───
     elif data == "adm_msgs":
         msgs = get_open_support_messages(10)
         text = "📋 <b>Ochiq xabarlar</b>\n\n"
@@ -1276,6 +1228,7 @@ def on_callback(call):
             InlineKeyboardButton("🔙 Orqaga", callback_data="adm_back"))
         bot.edit_message_text(text, uid, call.message.message_id, reply_markup=kb)
 
+    # ─── REKLAMA SOZLAMALARI ───
     elif data == "adm_ads":
         text = (
             f"📢 <b>Reklama sozlamalari</b>\n\n"
@@ -1299,14 +1252,19 @@ def on_callback(call):
         msg = bot.send_message(uid, f"<b>{key}</b> uchun yangi qiymat (raqam):")
         bot.register_next_step_handler(msg, set_setting_step, key)
 
+    # ─── ORQAGA ───
     elif data == "adm_back":
         bot.delete_message(uid, call.message.message_id)
         show_admin_menu(uid)
 
+    # ─── SUPPORT REPLY ───
     elif data.startswith("reply:"):
         mid = int(data.split(":")[1])
         msg = bot.send_message(uid, f"💬 Xabar #{mid} uchun javobingizni yozing:")
         bot.register_next_step_handler(msg, send_admin_reply, mid)
+
+    elif data == "none":
+        pass
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -1366,71 +1324,135 @@ def confirm_broadcast(message):
     )
 
 
+# ═══════════════════════════════════════════════════════════════
+# KANAL QO'SHISH — SODDA 3 USUL
+# ═══════════════════════════════════════════════════════════════
 def add_channel_step(message):
-    """Kanal qo'shish."""
+    """
+    Kanal qo'shish — 3 usul:
+      1) @username (public)
+      2) https://t.me/+XXX yoki https://t.me/username
+      3) Forward qilingan xabar
+    """
     try:
-        parts = message.text.split("|")
-        if len(parts) < 3:
-            raise ValueError("Format: @username|Nomi|member")
-
-        raw_id = parts[0].strip()
-        name = parts[1].strip()
-        mode = parts[2].strip().lower()
-
-        if mode not in ("member", "request"):
-            mode = "member"
-
         username = None
         invite_link = None
-        chat_id = raw_id
+        chat_id = None
+        name = None
+        mode = "member"
 
-        # @username
-        if raw_id.startswith("@"):
-            username = raw_id
-            try:
-                chat = bot.get_chat(raw_id)
-                chat_id = str(chat.id)
-            except Exception as e:
+        # ═══ 1-USUL: Forward qilingan xabar ═══
+        if message.forward_from_chat:
+            chat = message.forward_from_chat
+            chat_id = str(chat.id)
+            name = chat.title or "Kanal"
+            username = f"@{chat.username}" if chat.username else None
+            if username:
+                invite_link = f"https://t.me/{chat.username}"
+            else:
+                try:
+                    invite_link = bot.export_chat_invite_link(chat.id)
+                    mode = "request"
+                except Exception:
+                    invite_link = None
+
+        # ═══ 2 yoki 3-USUL: Matn ═══
+        elif message.content_type == "text":
+            text = message.text.strip()
+
+            # @username (Public)
+            if text.startswith("@") or (not text.startswith("http") and "/" not in text):
+                username = text if text.startswith("@") else f"@{text}"
+                try:
+                    chat = bot.get_chat(username)
+                    chat_id = str(chat.id)
+                    name = chat.title or username
+                    invite_link = f"https://t.me/{username.replace('@', '')}"
+                    mode = "member"
+                except Exception as e:
+                    bot.send_message(
+                        message.chat.id,
+                        f"❌ <b>Xato:</b> Botni kanalga admin qiling!\n\n"
+                        f"<code>{e}</code>\n\n"
+                        "Yoki kanaldan biror xabarni <b>forward</b> qilib yuboring."
+                    )
+                    return
+
+            # https://t.me/+XXX (Private)
+            elif "t.me/+" in text or "t.me/joinchat/" in text:
+                invite_link = text
+                try:
+                    chat = bot.get_chat(text)
+                    chat_id = str(chat.id)
+                    name = chat.title or "Yopiq kanal"
+                    username = chat.username
+                    mode = "request"
+                except Exception as e:
+                    bot.send_message(
+                        message.chat.id,
+                        f"❌ <b>Invite link xato:</b>\n<code>{e}</code>\n\n"
+                        "Botni kanalga admin qilib, qayta urinib ko'ring."
+                    )
+                    return
+
+            # https://t.me/username (Public link)
+            elif "t.me/" in text:
+                username = "@" + text.split("t.me/")[-1].split("/")[0].split("?")[0]
+                try:
+                    chat = bot.get_chat(username)
+                    chat_id = str(chat.id)
+                    name = chat.title or username
+                    invite_link = f"https://t.me/{username.replace('@', '')}"
+                    mode = "member"
+                except Exception as e:
+                    bot.send_message(message.chat.id, f"❌ <code>{e}</code>")
+                    return
+            else:
                 bot.send_message(
                     message.chat.id,
-                    f"⚠️ Botni kanalga admin qiling!\n<code>{e}</code>"
+                    "❌ <b>Format noto'g'ri</b>\n\n"
+                    "Yuboring:\n"
+                    "• <code>@username</code>\n"
+                    "• <code>https://t.me/+XXX</code>\n"
+                    "• Yoki kanaldan xabar <b>forward</b> qiling"
                 )
-            invite_link = f"https://t.me/{raw_id.replace('@', '')}"
+                return
 
-        # https://t.me/+XXX
-        elif raw_id.startswith("https://t.me/+"):
-            invite_link = raw_id
-            try:
-                chat = bot.get_chat(raw_id)
-                chat_id = str(chat.id)
-                username = chat.username
-            except Exception as e:
-                bot.send_message(
-                    message.chat.id,
-                    f"⚠️ Invite linkdan chat_id olib bo'lmadi. "
-                    f"Botni kanalga admin qiling!\n<code>{e}</code>"
-                )
-
-        # Chat ID (raqam)
         else:
-            chat_id = raw_id
-            try:
-                chat = bot.get_chat(raw_id)
-                username = chat.username
-                invite_link = chat.invite_link
-            except Exception:
-                pass
+            bot.send_message(
+                message.chat.id,
+                "❌ Faqat <b>@username</b>, <b>havola</b>, yoki <b>forward</b> yuboring"
+            )
+            return
+
+        # ═══ Saqlash ═══
+        if not chat_id:
+            bot.send_message(message.chat.id, "❌ Chat ID olinmadi")
+            return
 
         add_channel(chat_id, name, username, invite_link, mode)
+
+        # Bot admin ekanligini tekshirish
+        admin_status = "⚠️ Bot admin emas!"
+        try:
+            bot_admin = bot.get_chat_member(chat_id, bot.get_me().id)
+            if bot_admin.status in ("administrator", "creator"):
+                admin_status = "✅ Bot admin"
+        except Exception:
+            pass
+
         bot.send_message(
             message.chat.id,
             f"✅ <b>Kanal qo'shildi!</b>\n\n"
-            f"📌 {name}\n"
-            f"🆔 <code>{chat_id}</code>\n"
-            f"🔧 Rejim: <b>{mode}</b>"
+            f"📌 Nomi: <b>{name}</b>\n"
+            f"🆔 Chat ID: <code>{chat_id}</code>\n"
+            f"🔗 Username: {username or '—'}\n"
+            f"🔐 Rejim: <b>{'📨 So\'rov' if mode == 'request' else '📢 Ommaviy'}</b>\n"
+            f"{admin_status}"
         )
+
     except Exception as e:
-        bot.send_message(message.chat.id, f"❌ Xato: {e}")
+        bot.send_message(message.chat.id, f"❌ Xato: <code>{e}</code>")
 
 
 def add_admin_step(message):
@@ -1494,16 +1516,17 @@ def on_join_request(req):
     name = req.from_user.full_name
 
     # Pending belgilash
-    conn = sqlite3.connect(DB_FILE)
     try:
+        conn = sqlite3.connect(DB_FILE)
         conn.execute(
             """INSERT OR REPLACE INTO pending_subs(user_id, channel_id, requested_at)
                 VALUES (?, ?, ?)""",
             (uid, str(req.chat.id), datetime.utcnow().isoformat())
         )
         conn.commit()
-    finally:
         conn.close()
+    except Exception:
+        pass
 
     # Adminlarga xabar
     for admin_id in get_all_admins():
@@ -1562,7 +1585,7 @@ def on_join_request_action(call):
 # KEYINGI QISM: 4-QISM (Flask + HTML Mini App boshlanishi)
 # ───────────────────────────────────────────────────────────────
 # ═══════════════════════════════════════════════════════════════
-# FLASK APP — BACKEND + MINI APP HTML
+# FLASK APP
 # ═══════════════════════════════════════════════════════════════
 app = Flask(__name__)
 CORS(app, origins="*")
@@ -1570,7 +1593,6 @@ CORS(app, origins="*")
 
 @app.after_request
 def add_cors_headers(r):
-    """Har bir javobga CORS header qo'shish."""
     r.headers['Access-Control-Allow-Origin'] = '*'
     r.headers['Access-Control-Allow-Headers'] = 'Content-Type, X-Telegram-Init-Data'
     r.headers['Access-Control-Allow-Methods'] = 'GET, POST, DELETE, OPTIONS'
@@ -1578,55 +1600,30 @@ def add_cors_headers(r):
 
 
 # ═══════════════════════════════════════════════════════════════
-# TELEGRAM AUTH — initData tekshirish
+# TELEGRAM AUTH
 # ═══════════════════════════════════════════════════════════════
 def validate_init_data(init_data):
-    """
-    Telegram WebApp initData imzosini tekshiradi.
-    Rasmiy hujjat: https://core.telegram.org/bots/webapps#validating-data-received-via-the-mini-app
-    """
     if not init_data:
         raise ValueError("initData yo'q")
-
     parsed = dict(parse_qsl(init_data, keep_blank_values=True))
     received_hash = parsed.pop("hash", None)
-
     if not received_hash:
         raise ValueError("hash parametri yo'q")
-
-    data_check_string = "\n".join(
-        f"{k}={v}" for k, v in sorted(parsed.items())
-    )
-
-    secret_key = hmac.new(
-        b"WebAppData",
-        BOT_TOKEN.encode(),
-        hashlib.sha256
-    ).digest()
-
-    calculated_hash = hmac.new(
-        secret_key,
-        data_check_string.encode(),
-        hashlib.sha256
-    ).hexdigest()
-
+    data_check_string = "\n".join(f"{k}={v}" for k, v in sorted(parsed.items()))
+    secret_key = hmac.new(b"WebAppData", BOT_TOKEN.encode(), hashlib.sha256).digest()
+    calculated_hash = hmac.new(secret_key, data_check_string.encode(), hashlib.sha256).hexdigest()
     if not hmac.compare_digest(calculated_hash, received_hash):
         raise ValueError("Imzo noto'g'ri")
-
-    # auth_date tekshirish (24 soat)
     auth_date = int(parsed.get("auth_date", 0))
     if time.time() - auth_date > 86400:
         raise ValueError("initData muddati o'tgan")
-
     user_json = parsed.get("user")
     if not user_json:
         raise ValueError("Foydalanuvchi ma'lumotlari yo'q")
-
     return json.loads(user_json)
 
 
 def auth_required(f):
-    """Decorator: Telegram autentifikatsiyasini talab qiladi."""
     @wraps(f)
     def wrapper(*args, **kwargs):
         init_data = request.headers.get("X-Telegram-Init-Data", "")
@@ -1635,20 +1632,14 @@ def auth_required(f):
         except ValueError as e:
             print(f"❌ Auth xato: {e}")
             return jsonify({"detail": str(e)}), 401
-
-        # Obuna tekshirish
         if not check_subscription(tg_user["id"]):
-            return jsonify({
-                "detail": "Obuna kerak",
-                "need_sub": True
-            }), 403
-
+            return jsonify({"detail": "Obuna kerak", "need_sub": True}), 403
         return f(tg_user, *args, **kwargs)
     return wrapper
 
 
 # ═══════════════════════════════════════════════════════════════
-# HTML — MINI APP (birinchi yarmi: head + CSS)
+# HTML — MINI APP (to'liq)
 # ═══════════════════════════════════════════════════════════════
 HTML_PAGE = r'''<!DOCTYPE html>
 <html lang="uz" data-theme="light">
@@ -1656,628 +1647,153 @@ HTML_PAGE = r'''<!DOCTYPE html>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <title>QR Master</title>
-
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="//libtl.com/sdk.js" data-zone="11990967" data-sdk="show_11990967"></script>
-
 <style>
-:root {
-  --bg: #ffffff;
-  --fg: #0f172a;
-  --muted: #64748b;
-  --card: #f1f5f9;
-  --primary: #6366f1;
-  --primary-2: #8b5cf6;
-  --border: #e2e8f0;
-  --success: #22c55e;
-  --danger: #ef4444;
-  --warning: #f59e0b;
-  --radius: 16px;
-}
-[data-theme="dark"] {
-  --bg: #0f172a;
-  --fg: #f1f5f9;
-  --muted: #94a3b8;
-  --card: #1e293b;
-  --border: #334155;
-}
-
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-  -webkit-tap-highlight-color: transparent;
-}
-
-body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  background: var(--bg);
-  color: var(--fg);
-  padding-bottom: 80px;
-  min-height: 100dvh;
-  overflow-x: hidden;
-}
-
-/* ═══ HEADER ═══ */
-.header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 16px 20px;
-  background: var(--bg);
-  border-bottom: 1px solid var(--border);
-  position: sticky;
-  top: 0;
-  z-index: 100;
-  backdrop-filter: blur(10px);
-}
-.logo {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-weight: 800;
-  font-size: 19px;
-}
-.logo-mark {
-  width: 34px;
-  height: 34px;
-  border-radius: 10px;
-  background: linear-gradient(135deg, var(--primary), var(--primary-2));
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #fff;
-  font-weight: 900;
-  font-size: 15px;
-  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
-}
-.avatar {
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #06b6d4, var(--primary));
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #fff;
-  font-weight: 700;
-  font-size: 14px;
-  box-shadow: 0 2px 8px rgba(6, 182, 212, 0.3);
-}
-
-/* ═══ MAIN ═══ */
-.main {
-  padding: 0 16px;
-}
-
-/* ═══ HERO ═══ */
-.hero {
-  margin: 16px 0;
-  padding: 22px;
-  border-radius: var(--radius);
-  background: linear-gradient(135deg, var(--primary), var(--primary-2));
-  color: #fff;
-  box-shadow: 0 10px 30px rgba(99, 102, 241, 0.35);
-}
-.hero h2 {
-  font-size: 20px;
-  margin-bottom: 6px;
-  font-weight: 800;
-}
-.hero p {
-  font-size: 13px;
-  opacity: 0.9;
-}
-
-/* ═══ SECTION TITLE ═══ */
-.st {
-  font-size: 15px;
-  font-weight: 700;
-  margin: 22px 0 12px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-.st small {
-  font-size: 12px;
-  color: var(--muted);
-  font-weight: 500;
-}
-
-/* ═══ TYPE GRID ═══ */
-.grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 10px;
-}
-.tc {
-  background: var(--card);
-  border: none;
-  border-radius: 14px;
-  padding: 14px 8px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  cursor: pointer;
-  color: var(--fg);
-  font-family: inherit;
-  transition: transform 0.15s, box-shadow 0.15s;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
-}
-.tc:active {
-  transform: scale(0.94);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
-}
-.ti {
-  font-size: 24px;
-}
-.tl {
-  font-size: 11px;
-  text-align: center;
-  font-weight: 600;
-  line-height: 1.2;
-}
-
-/* ═══ BOTTOM NAV ═══ */
-.nav {
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  display: flex;
-  background: var(--bg);
-  border-top: 1px solid var(--border);
-  padding: 8px 0 calc(8px + env(safe-area-inset-bottom));
-  z-index: 100;
-}
-.nb {
-  flex: 1;
-  background: none;
-  border: none;
-  color: var(--muted);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  padding: 6px 4px;
-  font-size: 10px;
-  font-weight: 600;
-  cursor: pointer;
-  font-family: inherit;
-  transition: color 0.2s;
-}
-.nb.active {
-  color: var(--primary);
-}
-.nb .ico {
-  font-size: 20px;
-}
-
-/* ═══ PAGES ═══ */
-.page {
-  display: none;
-  animation: fadeIn 0.25s ease;
-}
-.page.active {
-  display: block;
-}
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(6px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-/* ═══ FORM ═══ */
-.field {
-  margin-bottom: 14px;
-}
-.field label {
-  display: block;
-  font-size: 13px;
-  color: var(--muted);
-  margin-bottom: 6px;
-  font-weight: 600;
-}
-.input, .select, .textarea {
-  width: 100%;
-  padding: 14px 16px;
-  background: var(--card);
-  border: 1.5px solid transparent;
-  border-radius: 14px;
-  font-size: 15px;
-  color: var(--fg);
-  outline: none;
-  font-family: inherit;
-  transition: border-color 0.2s;
-}
-.input:focus, .textarea:focus, .select:focus {
-  border-color: var(--primary);
-}
-.textarea {
-  resize: vertical;
-  min-height: 80px;
-}
-
-/* ═══ BUTTONS ═══ */
-.btn {
-  width: 100%;
-  padding: 16px;
-  border: none;
-  border-radius: 14px;
-  font-size: 15px;
-  font-weight: 700;
-  cursor: pointer;
-  font-family: inherit;
-  transition: transform 0.15s, opacity 0.15s;
-}
-.btn:active {
-  transform: scale(0.97);
-}
-.btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-.bp {
-  background: linear-gradient(135deg, var(--primary), var(--primary-2));
-  color: #fff;
-  box-shadow: 0 6px 20px rgba(99, 102, 241, 0.35);
-}
-.bg {
-  background: var(--card);
-  color: var(--fg);
-}
-.bw {
-  background: linear-gradient(135deg, var(--warning), var(--danger));
-  color: #fff;
-  box-shadow: 0 6px 20px rgba(245, 158, 11, 0.3);
-}
-.bs {
-  background: linear-gradient(135deg, #22c55e, #16a34a);
-  color: #fff;
-  box-shadow: 0 6px 20px rgba(34, 197, 94, 0.3);
-}
-
-/* ═══ QR RESULT ═══ */
-.qr-r {
-  margin-top: 20px;
-  padding: 20px;
-  border-radius: var(--radius);
-  background: var(--card);
-  text-align: center;
-}
-.qr-r canvas {
-  border-radius: 12px;
-  max-width: 100%;
-  height: auto;
-}
-.qa {
-  display: flex;
-  gap: 8px;
-  margin-top: 14px;
-}
-.qa .btn {
-  padding: 12px;
-  font-size: 13px;
-}
-
-/* ═══ TOAST ═══ */
-.tw {
-  position: fixed;
-  top: 80px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 1000;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  pointer-events: none;
-  max-width: 90vw;
-}
-.toast {
-  padding: 12px 20px;
-  border-radius: 12px;
-  color: #fff;
-  font-size: 14px;
-  font-weight: 600;
-  text-align: center;
-  animation: toastIn 0.3s ease;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-}
-.toast.success { background: var(--success); }
-.toast.error { background: var(--danger); }
-.toast.info { background: var(--primary); }
-@keyframes toastIn {
-  from { opacity: 0; transform: translateY(-10px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-/* ═══ EMPTY STATE ═══ */
-.empty {
-  text-align: center;
-  padding: 40px 20px;
-  color: var(--muted);
-  font-size: 14px;
-}
-.empty .ico {
-  font-size: 44px;
-  display: block;
-  margin-bottom: 10px;
-  opacity: 0.5;
-}
-
-/* ═══ HISTORY ITEM ═══ */
-.hi {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 14px;
-  background: var(--card);
-  border-radius: 14px;
-  margin-bottom: 8px;
-  transition: transform 0.15s;
-}
-.hi-i {
-  flex: 1;
-  min-width: 0;
-}
-.hi-i h4 {
-  font-size: 14px;
-  font-weight: 700;
-  margin-bottom: 3px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.hi-i p {
-  font-size: 12px;
-  color: var(--muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.ic {
-  width: 34px;
-  height: 34px;
-  border-radius: 10px;
-  border: none;
-  background: var(--bg);
-  color: var(--fg);
-  cursor: pointer;
-  font-size: 16px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: background 0.15s;
-}
-.ic:active {
-  background: var(--border);
-}
-
-/* ═══ PROFILE CARD ═══ */
-.pc {
-  padding: 20px;
-  border-radius: var(--radius);
-  background: linear-gradient(135deg, var(--primary), var(--primary-2));
-  color: #fff;
-  text-align: center;
-  margin-bottom: 16px;
-  box-shadow: 0 10px 30px rgba(99, 102, 241, 0.35);
-}
-.pc .av {
-  width: 70px;
-  height: 70px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.2);
-  margin: 0 auto 10px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 28px;
-  font-weight: 800;
-  backdrop-filter: blur(10px);
-}
-.pc h3 {
-  font-size: 17px;
-  margin-bottom: 4px;
-}
-.pc p {
-  font-size: 13px;
-  opacity: 0.85;
-}
-.stats {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 8px;
-  margin-top: 16px;
-}
-.stat {
-  background: rgba(255, 255, 255, 0.15);
-  padding: 10px;
-  border-radius: 12px;
-  backdrop-filter: blur(10px);
-}
-.stat b {
-  display: block;
-  font-size: 18px;
-  font-weight: 800;
-}
-.stat span {
-  font-size: 10px;
-  opacity: 0.85;
-}
-
-/* ═══ LOADING ═══ */
-.loading {
-  position: fixed;
-  inset: 0;
-  background: rgba(15, 23, 42, 0.55);
-  display: none;
-  align-items: center;
-  justify-content: center;
-  z-index: 2000;
-  backdrop-filter: blur(2px);
-}
-.loading.on {
-  display: flex;
-}
-.spin {
-  width: 42px;
-  height: 42px;
-  border: 3px solid rgba(255, 255, 255, 0.25);
-  border-top-color: #fff;
-  border-radius: 50%;
-  animation: sp 0.8s linear infinite;
-}
-@keyframes sp {
-  to { transform: rotate(360deg); }
-}
-
-/* ═══ REF LINK ═══ */
-.rl {
-  background: var(--card);
-  padding: 12px;
-  border-radius: 10px;
-  font-family: 'Courier New', monospace;
-  font-size: 11px;
-  word-break: break-all;
-  margin: 10px 0;
-  border: 1px solid var(--border);
-  color: var(--primary);
-}
-
-/* ═══ LOGO UPLOAD ═══ */
-.lu {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 14px;
-  background: var(--card);
-  border-radius: 14px;
-  border: 2px dashed var(--border);
-  cursor: pointer;
-  margin-bottom: 10px;
-  transition: border-color 0.2s;
-}
-.lu:hover {
-  border-color: var(--primary);
-}
-.lu img {
-  width: 50px;
-  height: 50px;
-  object-fit: contain;
-  border-radius: 8px;
-  background: var(--bg);
-}
-
-/* ═══ ERROR PAGE ═══ */
-.ep {
-  padding: 60px 20px;
-  text-align: center;
-}
-.ep .ico {
-  font-size: 64px;
-  margin-bottom: 20px;
-}
-.ep h2 {
-  color: var(--primary);
-  margin-bottom: 10px;
-  font-size: 20px;
-}
-.ep p {
-  color: var(--muted);
-  line-height: 1.6;
-  font-size: 14px;
-}
-
-/* ═══ BADGE ═══ */
-.badge {
-  display: inline-block;
-  padding: 4px 10px;
-  border-radius: 20px;
-  font-size: 11px;
-  font-weight: 700;
-}
-.badge.ok {
-  background: rgba(34, 197, 94, 0.15);
-  color: var(--success);
-}
-.badge.warn {
-  background: rgba(245, 158, 11, 0.15);
-  color: var(--warning);
-}
-.badge.err {
-  background: rgba(239, 68, 68, 0.15);
-  color: var(--danger);
-}
-
-/* ═══ ANIMATIONS ═══ */
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
-}
-.pulse {
-  animation: pulse 1.5s ease-in-out infinite;
-}
-
-/* ═══ SCROLL BAR ═══ */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-::-webkit-scrollbar-thumb {
-  background: var(--border);
-  border-radius: 10px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: var(--muted);
-}
+:root{--bg:#fff;--fg:#0f172a;--muted:#64748b;--card:#f1f5f9;--primary:#6366f1;
+--primary-2:#8b5cf6;--border:#e2e8f0;--success:#22c55e;--danger:#ef4444;
+--warning:#f59e0b;--radius:16px}
+[data-theme="dark"]{--bg:#0f172a;--fg:#f1f5f9;--muted:#94a3b8;--card:#1e293b;--border:#334155}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+background:var(--bg);color:var(--fg);padding-bottom:80px;min-height:100dvh;overflow-x:hidden}
+.header{display:flex;justify-content:space-between;align-items:center;padding:16px 20px;
+background:var(--bg);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:100}
+.logo{display:flex;align-items:center;gap:10px;font-weight:800;font-size:19px}
+.logo-mark{width:34px;height:34px;border-radius:10px;
+background:linear-gradient(135deg,var(--primary),var(--primary-2));
+display:flex;align-items:center;justify-content:center;color:#fff;font-weight:900;font-size:15px;
+box-shadow:0 4px 12px rgba(99,102,241,.3)}
+.avatar{width:36px;height:36px;border-radius:50%;
+background:linear-gradient(135deg,#06b6d4,var(--primary));
+display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:14px}
+.main{padding:0 16px}
+.hero{margin:16px 0;padding:22px;border-radius:var(--radius);
+background:linear-gradient(135deg,var(--primary),var(--primary-2));
+color:#fff;box-shadow:0 10px 30px rgba(99,102,241,.35)}
+.hero h2{font-size:20px;margin-bottom:6px;font-weight:800}
+.hero p{font-size:13px;opacity:.9}
+.st{font-size:15px;font-weight:700;margin:22px 0 12px;display:flex;
+justify-content:space-between;align-items:center}
+.st small{font-size:12px;color:var(--muted);font-weight:500}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.tc{background:var(--card);border:none;border-radius:14px;padding:14px 8px;
+display:flex;flex-direction:column;align-items:center;gap:6px;cursor:pointer;
+color:var(--fg);font-family:inherit;transition:transform .15s,box-shadow .15s;
+box-shadow:0 2px 6px rgba(0,0,0,.04)}
+.tc:active{transform:scale(.94)}
+.ti{font-size:24px}
+.tl{font-size:11px;text-align:center;font-weight:600;line-height:1.2}
+.nav{position:fixed;bottom:0;left:0;right:0;display:flex;background:var(--bg);
+border-top:1px solid var(--border);padding:8px 0 calc(8px + env(safe-area-inset-bottom));z-index:100}
+.nb{flex:1;background:none;border:none;color:var(--muted);display:flex;
+flex-direction:column;align-items:center;gap:2px;padding:6px 4px;font-size:10px;
+font-weight:600;cursor:pointer;font-family:inherit;transition:color .2s}
+.nb.active{color:var(--primary)}
+.nb .ico{font-size:20px}
+.page{display:none;animation:fade .25s ease}
+.page.active{display:block}
+@keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.field{margin-bottom:14px}
+.field label{display:block;font-size:13px;color:var(--muted);margin-bottom:6px;font-weight:600}
+.input,.select,.textarea{width:100%;padding:14px 16px;background:var(--card);
+border:1.5px solid transparent;border-radius:14px;font-size:15px;color:var(--fg);
+outline:none;font-family:inherit;transition:border-color .2s}
+.input:focus,.textarea:focus,.select:focus{border-color:var(--primary)}
+.textarea{resize:vertical;min-height:80px}
+.btn{width:100%;padding:16px;border:none;border-radius:14px;font-size:15px;
+font-weight:700;cursor:pointer;font-family:inherit;transition:transform .15s}
+.btn:active{transform:scale(.97)}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.bp{background:linear-gradient(135deg,var(--primary),var(--primary-2));color:#fff;
+box-shadow:0 6px 20px rgba(99,102,241,.35)}
+.bg{background:var(--card);color:var(--fg)}
+.bw{background:linear-gradient(135deg,var(--warning),var(--danger));color:#fff}
+.bs{background:linear-gradient(135deg,#22c55e,#16a34a);color:#fff}
+.qr-r{margin-top:20px;padding:20px;border-radius:var(--radius);
+background:var(--card);text-align:center}
+.qr-r canvas{border-radius:12px;max-width:100%;height:auto}
+.qa{display:flex;gap:8px;margin-top:14px}
+.qa .btn{padding:12px;font-size:13px}
+.tw{position:fixed;top:80px;left:50%;transform:translateX(-50%);z-index:1000;
+display:flex;flex-direction:column;gap:8px;pointer-events:none;max-width:90vw}
+.toast{padding:12px 20px;border-radius:12px;color:#fff;font-size:14px;
+font-weight:600;text-align:center;animation:tin .3s ease;box-shadow:0 4px 12px rgba(0,0,0,.15)}
+.toast.success{background:var(--success)}
+.toast.error{background:var(--danger)}
+.toast.info{background:var(--primary)}
+@keyframes tin{from{opacity:0;transform:translateY(-10px)}to{opacity:1;transform:none}}
+.empty{text-align:center;padding:40px 20px;color:var(--muted);font-size:14px}
+.empty .ico{font-size:44px;display:block;margin-bottom:10px;opacity:.5}
+.hi{display:flex;align-items:center;gap:12px;padding:14px;background:var(--card);
+border-radius:14px;margin-bottom:8px}
+.hi-i{flex:1;min-width:0}
+.hi-i h4{font-size:14px;font-weight:700;margin-bottom:3px;white-space:nowrap;
+overflow:hidden;text-overflow:ellipsis}
+.hi-i p{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ic{width:34px;height:34px;border-radius:10px;border:none;background:var(--bg);
+color:var(--fg);cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center}
+.pc{padding:20px;border-radius:var(--radius);
+background:linear-gradient(135deg,var(--primary),var(--primary-2));
+color:#fff;text-align:center;margin-bottom:16px;box-shadow:0 10px 30px rgba(99,102,241,.35)}
+.pc .av{width:70px;height:70px;border-radius:50%;background:rgba(255,255,255,.2);
+margin:0 auto 10px;display:flex;align-items:center;justify-content:center;
+font-size:28px;font-weight:800}
+.pc h3{font-size:17px;margin-bottom:4px}
+.pc p{font-size:13px;opacity:.85}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:16px}
+.stat{background:rgba(255,255,255,.15);padding:10px;border-radius:12px}
+.stat b{display:block;font-size:18px;font-weight:800}
+.stat span{font-size:10px;opacity:.85}
+.loading{position:fixed;inset:0;background:rgba(15,23,42,.55);display:none;
+align-items:center;justify-content:center;z-index:2000}
+.loading.on{display:flex}
+.spin{width:42px;height:42px;border:3px solid rgba(255,255,255,.25);
+border-top-color:#fff;border-radius:50%;animation:sp .8s linear infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
+.rl{background:var(--card);padding:12px;border-radius:10px;
+font-family:'Courier New',monospace;font-size:11px;word-break:break-all;
+margin:10px 0;border:1px solid var(--border);color:var(--primary)}
+.lu{display:flex;align-items:center;gap:10px;padding:14px;background:var(--card);
+border-radius:14px;border:2px dashed var(--border);cursor:pointer;margin-bottom:10px}
+.lu img{width:50px;height:50px;object-fit:contain;border-radius:8px;background:var(--bg)}
+.ep{padding:60px 20px;text-align:center}
+.ep .ico{font-size:64px;margin-bottom:20px}
+.ep h2{color:var(--primary);margin-bottom:10px;font-size:20px}
+.ep p{color:var(--muted);line-height:1.6;font-size:14px}
+.badge{display:inline-block;padding:4px 10px;border-radius:20px;font-size:11px;font-weight:700}
+.badge.ok{background:rgba(34,197,94,.15);color:var(--success)}
+.badge.warn{background:rgba(245,158,11,.15);color:var(--warning)}
+.badge.err{background:rgba(239,68,68,.15);color:var(--danger)}
 </style>
 </head>
 <body>
 
-<!-- ═══ HEADER ═══ -->
 <div class="header">
-  <div class="logo">
-    <div class="logo-mark">QR</div>
-    <span>QR Master</span>
-  </div>
+  <div class="logo"><div class="logo-mark">QR</div><span>QR Master</span></div>
   <div class="avatar" id="av">U</div>
 </div>
 
-<!-- ═══ MAIN ═══ -->
 <div class="main" id="mainC">
 
-  <!-- HOME -->
   <div class="page active" id="p-home">
-    <div class="hero">
-      <h2>🎯 QR Master</h2>
-      <p>20+ turdagi QR kod yaratish va dizayn</p>
-    </div>
+    <div class="hero"><h2>🎯 QR Master</h2><p>20+ turdagi QR kod yaratish</p></div>
     <div class="st">QR Turlari</div>
     <div class="grid" id="tg"></div>
     <div class="st">So'nggi QR kodlar</div>
     <div id="rl"></div>
   </div>
 
-  <!-- CREATE -->
   <div class="page" id="p-create">
     <div class="st" id="ct">QR kod</div>
     <div id="df"></div>
-
     <div class="st">🎨 Dizayn</div>
-    <div class="field">
-      <label>QR rangi</label>
-      <input type="color" id="fc" value="#6366f1"
-             style="width:100%;height:50px;border:none;border-radius:12px">
-    </div>
-    <div class="field">
-      <label>Fon rangi</label>
-      <input type="color" id="bc" value="#ffffff"
-             style="width:100%;height:50px;border:none;border-radius:12px">
-    </div>
-    <div class="field">
-      <label>📷 Logo (ixtiyoriy)</label>
+    <div class="field"><label>QR rangi</label>
+      <input type="color" id="fc" value="#6366f1" style="width:100%;height:50px;border:none;border-radius:12px"></div>
+    <div class="field"><label>Fon rangi</label>
+      <input type="color" id="bc" value="#ffffff" style="width:100%;height:50px;border:none;border-radius:12px"></div>
+    <div class="field"><label>📷 Logo (ixtiyoriy)</label>
       <div class="lu" id="lb" onclick="document.getElementById('lf').click()">
         <img id="lp" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='50' height='50'%3E%3Ctext x='50%25' y='55%25' text-anchor='middle' font-size='24' fill='%2364748b'%3E%2B%3C/text%3E%3C/svg%3E">
         <div style="flex:1">
@@ -2286,101 +1802,56 @@ body {
         </div>
       </div>
       <input type="file" id="lf" accept="image/*" hidden>
-      <button class="btn bg" id="cl" style="display:none;padding:8px;font-size:12px">
-        🗑 Logoni o'chirish
-      </button>
+      <button class="btn bg" id="cl" style="display:none;padding:8px;font-size:12px">🗑 O'chirish</button>
     </div>
-    <div class="field">
-      <label>O'lcham</label>
+    <div class="field"><label>O'lcham</label>
       <select class="select" id="qs">
         <option value="256">256 × 256</option>
         <option value="512" selected>512 × 512</option>
         <option value="1024">1024 × 1024</option>
-      </select>
-    </div>
-
+      </select></div>
     <button class="btn bp" id="gb">✨ QR kod yaratish</button>
     <button class="btn bg" id="bb" style="margin-top:8px">← Orqaga</button>
-
     <div class="qr-r" id="qr" style="display:none">
       <div id="qc"></div>
       <div class="qa">
         <button class="btn bp" id="dlb">⬇️ Yuklab olish</button>
-        <button class="btn bs" id="sb">💾 Saqlash</button>
       </div>
     </div>
   </div>
 
-  <!-- ADS -->
   <div class="page" id="p-ads">
     <div class="st">🎬 Reklama / Unlock</div>
-    <div class="hero">
-      <h2>🔓 Qo'shimcha QR limit</h2>
-      <p>Reklama ko'ring yoki do'stlarni taklif qiling</p>
-    </div>
-
-    <div class="hi">
-      <div class="hi-i">
-        <h4>🎁 Bepul limit</h4>
-        <p id="fc2">1 ta</p>
-      </div>
-      <span class="badge ok" id="fb">FREE</span>
-    </div>
-
-    <div class="hi">
-      <div class="hi-i">
-        <h4>🔓 Unlock qilingan</h4>
-        <p id="uc">0 ta</p>
-      </div>
-      <span class="badge warn">UNLOCK</span>
-    </div>
-
-    <button class="btn bw" id="wab" style="margin-top:14px">
-      ▶️ Reklama ko'rish (+3 QR)
-    </button>
-    <button class="btn bp" id="ib" style="margin-top:8px">
-      👥 Do'st taklif qilish (+10 QR)
-    </button>
-
+    <div class="hero"><h2>🔓 Qo'shimcha QR limit</h2>
+      <p>Reklama ko'ring yoki do'st taklif qiling</p></div>
+    <div class="hi"><div class="hi-i"><h4>🎁 Bepul limit</h4><p id="fc2">1 ta</p></div>
+      <span class="badge ok">FREE</span></div>
+    <div class="hi"><div class="hi-i"><h4>🔓 Unlock qilingan</h4><p id="uc">0 ta</p></div>
+      <span class="badge warn">UNLOCK</span></div>
+    <button class="btn bw" id="wab" style="margin-top:14px">▶️ Reklama ko'rish (+3 QR)</button>
+    <button class="btn bp" id="ib" style="margin-top:8px">👥 Do'st taklif qilish (+10 QR)</button>
     <div class="st">📊 Statistika</div>
-    <div class="hi">
-      <div class="hi-i">
-        <h4>Ko'rilgan reklamalar</h4>
-        <p id="at">0</p>
-      </div>
-      <span class="badge ok" id="ab">+0</span>
-    </div>
+    <div class="hi"><div class="hi-i"><h4>Ko'rilgan reklamalar</h4><p id="at">0</p></div>
+      <span class="badge ok" id="ab">+0</span></div>
   </div>
 
-  <!-- HISTORY -->
   <div class="page" id="p-hist">
     <div class="st">🕐 Tarix</div>
     <div id="hl"></div>
   </div>
 
-  <!-- REFERRAL -->
   <div class="page" id="p-ref">
     <div class="st">👥 Referal tizimi</div>
-    <div class="hero">
-      <h2>🎁 Har referal +10 QR</h2>
-      <p>Do'stni taklif qiling va bonus oling</p>
-    </div>
-
-    <div class="field">
-      <label>🔗 Sizning havolangiz:</label>
-      <div class="rl" id="rlink">—</div>
-    </div>
-
+    <div class="hero"><h2>🎁 Har referal +10 QR</h2>
+      <p>Do'stni taklif qiling va bonus oling</p></div>
+    <div class="field"><label>🔗 Sizning havolangiz:</label>
+      <div class="rl" id="rlink">—</div></div>
     <button class="btn bp" id="cr">📋 Nusxalash</button>
     <button class="btn bg" id="sr" style="margin-top:8px">📤 Ulashish</button>
-
-    <div class="st">
-      Referallaringiz (<span id="rc">0</span>)
-    </div>
+    <div class="st">Referallaringiz (<span id="rc">0</span>)</div>
     <div id="rlist"></div>
   </div>
 
-  <!-- PROFILE -->
   <div class="page" id="p-prof">
     <div class="pc">
       <div class="av" id="pav">U</div>
@@ -2393,105 +1864,63 @@ body {
         <div class="stat"><b id="s4">0</b><span>Referal</span></div>
       </div>
     </div>
-
     <button class="btn bg" id="tb">🌗 Mavzuni almashtirish</button>
     <button class="btn bg" id="rl2" style="margin-top:8px">🔄 Ma'lumotlarni yangilash</button>
   </div>
 
 </div>
 
-<!-- ═══ BOTTOM NAV ═══ -->
 <nav class="nav">
-  <button class="nb active" data-page="home">
-    <span class="ico">🏠</span>Asosiy
-  </button>
-  <button class="nb" data-page="ads">
-    <span class="ico">🎬</span>Reklama
-  </button>
-  <button class="nb" data-page="ref">
-    <span class="ico">👥</span>Referal
-  </button>
-  <button class="nb" data-page="hist">
-    <span class="ico">🕐</span>Tarix
-  </button>
-  <button class="nb" data-page="prof">
-    <span class="ico">👤</span>Profil
-  </button>
+  <button class="nb active" data-page="home"><span class="ico">🏠</span>Asosiy</button>
+  <button class="nb" data-page="ads"><span class="ico">🎬</span>Reklama</button>
+  <button class="nb" data-page="ref"><span class="ico">👥</span>Referal</button>
+  <button class="nb" data-page="hist"><span class="ico">🕐</span>Tarix</button>
+  <button class="nb" data-page="prof"><span class="ico">👤</span>Profil</button>
 </nav>
 
-<!-- ═══ TOAST + LOADING ═══ -->
 <div class="tw" id="tw"></div>
 <div class="loading" id="ld"><div class="spin"></div></div>
 
 <script>
-
-// MONETAG REKLAMA
-// ═══════════════════════════════════════════════════════════════
 const MONETAG_ZONE = "11990967";
 
 const AdManager = {
   async show() {
     const fn = window['show_' + MONETAG_ZONE];
-    if (typeof fn !== 'function') {
-      console.warn('Monetag SDK yuklanmagan');
-      return false;
-    }
-    try {
-      await fn('pop');
-      return true;
-    } catch (e) {
-      console.warn('Reklama xatosi:', e);
-      return false;
-    }
+    if (typeof fn !== 'function') { console.warn('SDK yoq'); return false; }
+    try { await fn('pop'); return true; }
+    catch (e) { console.warn(e); return false; }
   }
 };
 
-// ═══════════════════════════════════════════════════════════════
-// ASOSIY APP
-// ═══════════════════════════════════════════════════════════════
 const App = {
-  currentType: 'universal',
-  currentData: null,
-  initData: '',
-  me: null,
-  logoData: null,
+  currentType: 'universal', currentData: null, initData: '', me: null, logoData: null,
 
-  // ═══ ISHGA TUSHIRISH ═══
   async start() {
     const tg = window.Telegram?.WebApp;
     if (tg) {
-      tg.ready();
-      tg.expand();
-      document.documentElement.setAttribute('data-theme',
-        tg.colorScheme === 'dark' ? 'dark' : 'light');
+      tg.ready(); tg.expand();
+      document.documentElement.setAttribute('data-theme', tg.colorScheme === 'dark' ? 'dark' : 'light');
     }
     this.initData = tg?.initData || '';
 
     if (!this.initData) {
       this.showError('⚠️', 'Telegram orqali oching',
-        'Bu sahifa faqat Telegram bot orqali ishlaydi.<br><br>' +
-        'Botga qaytib <b>🧩 QR yaratish</b> tugmasini bosing.');
+        'Bu sahifa faqat Telegram bot orqali ishlaydi.<br><br>Botga qaytib <b>🧩 QR yaratish</b> tugmasini bosing.');
       return;
     }
 
-    this.renderTypes();
-    this.bindNav();
-    this.bindForm();
-    this.bindProfile();
-    this.bindRef();
-    this.bindAds();
+    this.renderTypes(); this.bindNav(); this.bindForm();
+    this.bindProfile(); this.bindRef(); this.bindAds();
     this.loadProfile();
 
     try {
       this.me = await this.api('/api/me', 'POST');
-
       if (this.me.need_sub) {
         this.showError('🔒', 'Obuna kerak',
-          'Botdan foydalanish uchun kanalga obuna bo\'ling.<br><br>' +
-          'Telegram botga qaytib <b>✅ Obunani tekshirish</b> tugmasini bosing.');
+          'Botdan foydalanish uchun kanalga obuna bo\'ling.<br><br>Botga qaytib <b>✅ Obunani tekshirish</b> tugmasini bosing.');
         return;
       }
-
       this.updateStats();
       await this.loadHistory();
       await this.loadRefs();
@@ -2506,26 +1935,15 @@ const App = {
     }
   },
 
-  // ═══ XATO SAHIFASI ═══
   showError(icon, title, text) {
     document.getElementById('mainC').innerHTML =
-      '<div class="ep">' +
-        '<div class="ico">' + icon + '</div>' +
-        '<h2>' + title + '</h2>' +
-        '<p>' + text + '</p>' +
-      '</div>';
+      '<div class="ep"><div class="ico">' + icon + '</div><h2>' + title + '</h2><p>' + text + '</p></div>';
     document.querySelector('.nav').style.display = 'none';
   },
 
-  // ═══ API CHAQIRUV ═══
   async api(path, method = 'GET', body = null) {
-    const opts = {
-      method: method,
-      headers: {
-        'X-Telegram-Init-Data': this.initData,
-        'Content-Type': 'application/json'
-      }
-    };
+    const opts = { method, headers: {
+      'X-Telegram-Init-Data': this.initData, 'Content-Type': 'application/json' } };
     if (body) opts.body = JSON.stringify(body);
     const r = await fetch(path, opts);
     if (!r.ok) {
@@ -2535,7 +1953,6 @@ const App = {
     return r.json();
   },
 
-  // ═══ STATISTIKA YANGILASH ═══
   updateStats() {
     if (!this.me) return;
     document.getElementById('s1').textContent = this.me.qr_count || 0;
@@ -2548,166 +1965,92 @@ const App = {
     document.getElementById('ab').textContent = '+' + (this.me.ad_count || 0);
   },
 
-  // ═══ PROFIL ═══
   loadProfile() {
     const u = window.Telegram?.WebApp?.initDataUnsafe?.user || {};
     const f = (u.first_name || 'F').charAt(0).toUpperCase();
     document.getElementById('av').textContent = f;
     document.getElementById('pav').textContent = f;
-    document.getElementById('pn').textContent =
-      ((u.first_name || '') + ' ' + (u.last_name || '')).trim() || 'Foydalanuvchi';
-    document.getElementById('pu').textContent =
-      u.username ? '@' + u.username : 'Telegram';
+    document.getElementById('pn').textContent = ((u.first_name || '') + ' ' + (u.last_name || '')).trim() || 'Foydalanuvchi';
+    document.getElementById('pu').textContent = u.username ? '@' + u.username : 'Telegram';
   },
 
-  // ═══ QR TURLARI (20+) ═══
   types: [
-    { id:'universal', i:'✨', l:'Universal', f:[
-      {k:'text', l:'Matn / URL', t:'textarea', p:'Istalgan matn yoki havola'}]},
-    { id:'url', i:'🔗', l:'URL', f:[
-      {k:'url', l:'Havola', t:'url', p:'https://example.com'}]},
-    { id:'text', i:'📝', l:'Matn', f:[
-      {k:'text', l:'Matn', t:'textarea', p:'Salom dunyo!'}]},
-    { id:'wifi', i:'📶', l:'Wi-Fi', f:[
-      {k:'ssid', l:'Tarmoq nomi', t:'text'},
-      {k:'pass', l:'Parol', t:'text'},
-      {k:'sec', l:'Xavfsizlik', t:'select', o:['WPA','WEP','nopass']}]},
-    { id:'vcard', i:'👤', l:'Kontakt', f:[
-      {k:'first', l:'Ism', t:'text'},
-      {k:'last', l:'Familiya', t:'text'},
-      {k:'phone', l:'Telefon', t:'tel'},
-      {k:'email', l:'Email', t:'email'}]},
-    { id:'phone', i:'📞', l:'Telefon', f:[
-      {k:'phone', l:'Raqam', t:'tel', p:'+998901234567'}]},
-    { id:'sms', i:'💬', l:'SMS', f:[
-      {k:'phone', l:'Telefon', t:'tel'},
-      {k:'msg', l:'Xabar', t:'textarea'}]},
-    { id:'email', i:'✉️', l:'Email', f:[
-      {k:'to', l:'Kimga', t:'email'},
-      {k:'subject', l:'Mavzu', t:'text'}]},
-    { id:'tg', i:'✈️', l:'Telegram', f:[
-      {k:'username', l:'Username', t:'text', p:'durov'}]},
-    { id:'instagram', i:'📸', l:'Instagram', f:[
-      {k:'username', l:'Username', t:'text'}]},
-    { id:'youtube', i:'▶️', l:'YouTube', f:[
-      {k:'url', l:'URL', t:'url'}]},
-    { id:'tiktok', i:'🎵', l:'TikTok', f:[
-      {k:'username', l:'Username', t:'text'}]},
-    { id:'geo', i:'📍', l:'Geo', f:[
-      {k:'lat', l:'Kenglik', t:'text', p:'41.311081'},
-      {k:'lng', l:'Uzunlik', t:'text', p:'69.240562'}]},
-    { id:'event', i:'📅', l:'Tadbir', f:[
-      {k:'title', l:'Nomi', t:'text'},
-      {k:'start', l:'Boshlanish', t:'text', p:'2025-12-31 18:00'}]},
-    { id:'video', i:'🎬', l:'Video', f:[
-      {k:'url', l:'Video URL (MP4/YouTube)', t:'url'}]},
-    { id:'audio', i:'🎧', l:'Audio', f:[
-      {k:'url', l:'Audio URL (MP3)', t:'url'}]},
-    { id:'pdf', i:'📄', l:'PDF', f:[
-      {k:'url', l:'PDF URL', t:'url'}]},
-    { id:'image', i:'🖼️', l:'Rasm', f:[
-      {k:'url', l:'Rasm URL', t:'url'}]},
-    { id:'app', i:'📱', l:'Ilova', f:[
-      {k:'name', l:'Ilova nomi', t:'text'},
-      {k:'url', l:'Yuklab olish URL', t:'url'}]},
-    { id:'custom', i:'⚙️', l:'Maxsus', f:[
-      {k:'raw', l:'Format', t:'textarea', p:'Istalgan format'}]},
+    {id:'universal',i:'✨',l:'Universal',f:[{k:'text',l:'Matn / URL',t:'textarea',p:'Istalgan matn'}]},
+    {id:'url',i:'🔗',l:'URL',f:[{k:'url',l:'Havola',t:'url',p:'https://example.com'}]},
+    {id:'text',i:'📝',l:'Matn',f:[{k:'text',l:'Matn',t:'textarea',p:'Salom dunyo!'}]},
+    {id:'wifi',i:'📶',l:'Wi-Fi',f:[{k:'ssid',l:'Tarmoq',t:'text'},{k:'pass',l:'Parol',t:'text'},{k:'sec',l:'Xavfsizlik',t:'select',o:['WPA','WEP','nopass']}]},
+    {id:'vcard',i:'👤',l:'Kontakt',f:[{k:'first',l:'Ism',t:'text'},{k:'last',l:'Familiya',t:'text'},{k:'phone',l:'Telefon',t:'tel'},{k:'email',l:'Email',t:'email'}]},
+    {id:'phone',i:'📞',l:'Telefon',f:[{k:'phone',l:'Raqam',t:'tel',p:'+998901234567'}]},
+    {id:'sms',i:'💬',l:'SMS',f:[{k:'phone',l:'Telefon',t:'tel'},{k:'msg',l:'Xabar',t:'textarea'}]},
+    {id:'email',i:'✉️',l:'Email',f:[{k:'to',l:'Kimga',t:'email'},{k:'subject',l:'Mavzu',t:'text'}]},
+    {id:'tg',i:'✈️',l:'Telegram',f:[{k:'username',l:'Username',t:'text',p:'durov'}]},
+    {id:'instagram',i:'📸',l:'Instagram',f:[{k:'username',l:'Username',t:'text'}]},
+    {id:'youtube',i:'▶️',l:'YouTube',f:[{k:'url',l:'URL',t:'url'}]},
+    {id:'tiktok',i:'🎵',l:'TikTok',f:[{k:'username',l:'Username',t:'text'}]},
+    {id:'geo',i:'📍',l:'Geo',f:[{k:'lat',l:'Kenglik',t:'text',p:'41.311'},{k:'lng',l:'Uzunlik',t:'text',p:'69.240'}]},
+    {id:'event',i:'📅',l:'Tadbir',f:[{k:'title',l:'Nomi',t:'text'},{k:'start',l:'Boshlanish',t:'text',p:'2025-12-31 18:00'}]},
+    {id:'video',i:'🎬',l:'Video',f:[{k:'url',l:'Video URL',t:'url'}]},
+    {id:'audio',i:'🎧',l:'Audio',f:[{k:'url',l:'Audio URL',t:'url'}]},
+    {id:'pdf',i:'📄',l:'PDF',f:[{k:'url',l:'PDF URL',t:'url'}]},
+    {id:'image',i:'🖼️',l:'Rasm',f:[{k:'url',l:'Rasm URL',t:'url'}]},
+    {id:'app',i:'📱',l:'Ilova',f:[{k:'name',l:'Nomi',t:'text'},{k:'url',l:'URL',t:'url'}]},
+    {id:'custom',i:'⚙️',l:'Maxsus',f:[{k:'raw',l:'Format',t:'textarea'}]},
   ],
 
-  // ═══ TURLARNI RENDER QILISH ═══
   renderTypes() {
-    const grid = document.getElementById('tg');
-    grid.innerHTML = this.types.map(t =>
-      '<button class="tc" data-t="' + t.id + '">' +
-        '<span class="ti">' + t.i + '</span>' +
-        '<span class="tl">' + t.l + '</span>' +
-      '</button>'
+    document.getElementById('tg').innerHTML = this.types.map(t =>
+      '<button class="tc" data-t="' + t.id + '"><span class="ti">' + t.i + '</span><span class="tl">' + t.l + '</span></button>'
     ).join('');
-    document.querySelectorAll('.tc').forEach(b => {
-      b.onclick = () => this.openCreate(b.dataset.t);
-    });
+    document.querySelectorAll('.tc').forEach(b => b.onclick = () => this.openCreate(b.dataset.t));
   },
 
-  // ═══ YARATISH SAHIFASINI OCHISH ═══
   openCreate(id) {
-    const t = this.types.find(x => x.id === id);
-    if (!t) return;
+    const t = this.types.find(x => x.id === id); if (!t) return;
     this.currentType = id;
     document.getElementById('ct').textContent = t.i + ' ' + t.l;
-
-    const fields = document.getElementById('df');
-    fields.innerHTML = t.f.map(f => {
+    document.getElementById('df').innerHTML = t.f.map(f => {
       let el;
-      if (f.t === 'textarea') {
-        el = '<textarea class="textarea" id="f_' + f.k + '" placeholder="' +
-             (f.p || '') + '"></textarea>';
-      } else if (f.t === 'select') {
-        el = '<select class="select" id="f_' + f.k + '">' +
-             f.o.map(o => '<option>' + o + '</option>').join('') +
-             '</select>';
-      } else {
-        el = '<input class="input" type="' + f.t + '" id="f_' + f.k +
-             '" placeholder="' + (f.p || '') + '">';
-      }
+      if (f.t === 'textarea') el = '<textarea class="textarea" id="f_' + f.k + '" placeholder="' + (f.p||'') + '"></textarea>';
+      else if (f.t === 'select') el = '<select class="select" id="f_' + f.k + '">' + f.o.map(o=>'<option>'+o+'</option>').join('') + '</select>';
+      else el = '<input class="input" type="' + f.t + '" id="f_' + f.k + '" placeholder="' + (f.p||'') + '">';
       return '<div class="field"><label>' + f.l + '</label>' + el + '</div>';
     }).join('');
-
     document.getElementById('qr').style.display = 'none';
     this.go('create');
   },
 
-  // ═══ QR MA'LUMOTINI YIG'ISH ═══
   buildPayload() {
     const v = id => (document.getElementById('f_' + id)?.value || '').trim();
     const enc = encodeURIComponent;
-
-    const map = {
-      universal: () => v('text'),
-      text: () => v('text'),
-      url: () => v('url'),
-      wifi: () => 'WIFI:T:' + (v('sec') || 'WPA') + ';S:' + v('ssid') +
-                  ';P:' + v('pass') + ';;',
-      vcard: () => [
-        'BEGIN:VCARD',
-        'VERSION:3.0',
-        'N:' + v('last') + ';' + v('first') + ';;;',
+    const m = {
+      universal: () => v('text'), text: () => v('text'), url: () => v('url'),
+      wifi: () => 'WIFI:T:' + (v('sec')||'WPA') + ';S:' + v('ssid') + ';P:' + v('pass') + ';;',
+      vcard: () => ['BEGIN:VCARD','VERSION:3.0','N:' + v('last') + ';' + v('first') + ';;;',
         ('FN:' + v('first') + ' ' + v('last')).trim(),
-        v('phone') ? 'TEL:' + v('phone') : '',
-        v('email') ? 'EMAIL:' + v('email') : '',
-        'END:VCARD'
-      ].filter(Boolean).join('\n'),
+        v('phone')?'TEL:'+v('phone'):'', v('email')?'EMAIL:'+v('email'):'',
+        'END:VCARD'].filter(Boolean).join('\n'),
       phone: () => 'tel:' + v('phone'),
       sms: () => 'SMSTO:' + v('phone') + ':' + v('msg'),
       email: () => 'mailto:' + v('to') + '?subject=' + enc(v('subject')),
-      tg: () => 'https://t.me/' + v('username').replace('@', ''),
-      instagram: () => 'https://instagram.com/' + v('username').replace('@', ''),
+      tg: () => 'https://t.me/' + v('username').replace('@',''),
+      instagram: () => 'https://instagram.com/' + v('username').replace('@',''),
       youtube: () => v('url'),
-      tiktok: () => 'https://tiktok.com/@' + v('username').replace('@', ''),
+      tiktok: () => 'https://tiktok.com/@' + v('username').replace('@',''),
       geo: () => 'geo:' + v('lat') + ',' + v('lng'),
-      event: () => [
-        'BEGIN:VEVENT',
-        'SUMMARY:' + v('title'),
-        'DTSTART:' + v('start').replace(/[-: ]/g, ''),
-        'END:VEVENT'
-      ].join('\n'),
-      video: () => v('url'),
-      audio: () => v('url'),
-      pdf: () => v('url'),
-      image: () => v('url'),
+      event: () => ['BEGIN:VEVENT','SUMMARY:' + v('title'),
+        'DTSTART:' + v('start').replace(/[-: ]/g,''),'END:VEVENT'].join('\n'),
+      video: () => v('url'), audio: () => v('url'),
+      pdf: () => v('url'), image: () => v('url'),
       app: () => 'APP:' + v('name') + '|URL:' + v('url'),
       custom: () => v('raw'),
     };
-
-    return (map[this.currentType] || (() => ''))();
+    return (m[this.currentType] || (() => ''))();
   },
 
-  // ═══ QR KOD YARATISH ═══
   async generate() {
     const data = this.buildPayload();
-    if (!data) return this.toast('Ma\'lumot kiriting', 'error');
-    if (typeof QRCode === 'undefined') {
-      return this.toast('QR kutubxona yuklanmagan', 'error');
-    }
+    if (!data) return this.toast("Ma'lumot kiriting", 'error');
+    if (typeof QRCode === 'undefined') return this.toast("QR kutubxona yo'q", 'error');
 
     const size = parseInt(document.getElementById('qs').value);
     const fill = document.getElementById('fc').value;
@@ -2715,37 +2058,23 @@ const App = {
 
     try {
       this.load(true);
-      const container = document.getElementById('qc');
-      container.innerHTML = '';
+      const c = document.getElementById('qc');
+      c.innerHTML = '';
 
-      // Chiroyli ramka
       const wrapper = document.createElement('div');
-      wrapper.style.cssText =
-        'display:inline-block;padding:24px;' +
-        'background:linear-gradient(135deg,' + fill + '15,' + fill + '25);' +
-        'border-radius:24px;' +
-        'box-shadow:0 15px 40px ' + fill + '40;' +
-        'border:1px solid ' + fill + '30;';
-      container.appendChild(wrapper);
+      wrapper.style.cssText = 'display:inline-block;padding:24px;background:linear-gradient(135deg,' + fill + '15,' + fill + '25);border-radius:24px;box-shadow:0 15px 40px ' + fill + '40;border:1px solid ' + fill + '30;';
+      c.appendChild(wrapper);
 
-      // QR div
       const qrDiv = document.createElement('div');
-      qrDiv.style.cssText =
-        'padding:14px;background:' + back + ';' +
-        'border-radius:16px;box-shadow:0 4px 12px rgba(0,0,0,.1);';
+      qrDiv.style.cssText = 'padding:14px;background:' + back + ';border-radius:16px;box-shadow:0 4px 12px rgba(0,0,0,.1);';
       wrapper.appendChild(qrDiv);
 
-      // QR yaratish
       new QRCode(qrDiv, {
-        text: data,
-        width: size,
-        height: size,
-        colorDark: fill,
-        colorLight: back,
+        text: data, width: size, height: size,
+        colorDark: fill, colorLight: back,
         correctLevel: QRCode.CorrectLevel.H
       });
 
-      // Logo qo'yish
       if (this.logoData) {
         setTimeout(() => {
           const canvas = qrDiv.querySelector('canvas');
@@ -2753,17 +2082,10 @@ const App = {
           const ctx = canvas.getContext('2d');
           const img = new Image();
           img.onload = () => {
-            const s = canvas.width;
-            const ls = s * 0.22;
-            const p = s * 0.015;
-            const x = (s - ls) / 2;
-            const y = (s - ls) / 2;
-
-            // Oq fon
-            ctx.fillStyle = '#ffffff';
-            ctx.fillRect(x - p, y - p, ls + p * 2, ls + p * 2);
-
-            // Logo
+            const s = canvas.width, ls = s * 0.22, p = s * 0.015;
+            const x = (s - ls) / 2, y = (s - ls) / 2;
+            ctx.fillStyle = '#fff';
+            ctx.fillRect(x - p, y - p, ls + p*2, ls + p*2);
             ctx.drawImage(img, x, y, ls, ls);
           };
           img.src = this.logoData;
@@ -2774,6 +2096,9 @@ const App = {
       document.getElementById('qr').style.display = 'block';
       document.getElementById('qr').scrollIntoView({ behavior: 'smooth' });
       this.toast('QR kod yaratildi ✅', 'success');
+
+      // AVTOMATIK SAQLASH
+      setTimeout(() => this.save(), 800);
     } catch (e) {
       this.toast('Xato: ' + e.message, 'error');
     } finally {
@@ -2781,46 +2106,20 @@ const App = {
     }
   },
 
-  // ═══ YUKLAB OLISH ═══
-  download() {
-    const canvas = document.querySelector('#qc canvas');
-    if (!canvas) return this.toast('QR kod yo\'q', 'error');
-
-    // Yangi canvas — faqat QR (ramkasiz)
-    const a = document.createElement('a');
-    a.href = canvas.toDataURL('image/png');
-    a.download = 'qrmaster-' + Date.now() + '.png';
-    a.click();
-    this.toast('Yuklab olindi ✅', 'success');
-  },
-
-  // ═══ SAQLASH ═══
   async save() {
-    if (!this.currentData) return this.toast('QR kod yo\'q', 'error');
-
+    if (!this.currentData) return;
     try {
-      this.load(true);
       const res = await this.api('/api/qr/save', 'POST', {
         qr_type: this.currentType,
         name: this.types.find(t => t.id === this.currentType)?.l || 'QR',
         data: this.currentData
       });
-
-      this.toast('✅ Saqlandi! Botga xabar yuborildi', 'success');
-
-      if (this.me) {
-        this.me.qr_count = res.total;
-        this.updateStats();
-      }
+      this.toast('✅ Botga saqlandi!', 'success');
+      if (this.me) { this.me.qr_count = res.total; this.updateStats(); }
       await this.loadHistory();
 
-      // Reklama kerakmi?
       if (res.show_ad) {
-        this.load(false);
-        const ok = confirm(
-          '🎬 Bepul limit tugadi!\n\n' +
-          'Reklama ko\'rib +3 QR unlock olasizmi?'
-        );
+        const ok = confirm('🎬 Bepul limit tugadi!\n\nReklama ko\'rib +3 QR unlock olasizmi?');
         if (ok) {
           this.load(true);
           const watched = await AdManager.show();
@@ -2832,146 +2131,88 @@ const App = {
             this.updateStats();
             this.toast('🎁 +3 QR unlock!', 'success');
           } else {
-            this.toast('Reklama ko\'rilmadi', 'error');
+            this.toast("Reklama ko'rilmadi", 'error');
           }
         }
       }
     } catch (e) {
-      this.toast(e.message, 'error');
-    } finally {
-      this.load(false);
+      this.toast('Saqlashda xato: ' + e.message, 'error');
     }
   },
 
-  // ═══ TARIXNI YUKLASH ═══
+  download() {
+    const canvas = document.querySelector('#qc canvas');
+    if (!canvas) return this.toast("QR yo'q", 'error');
+    const a = document.createElement('a');
+    a.href = canvas.toDataURL('image/png');
+    a.download = 'qrmaster-' + Date.now() + '.png';
+    a.click();
+    this.toast('Yuklab olindi ✅', 'success');
+  },
+
   async loadHistory() {
     try {
       const list = await this.api('/api/qr/list');
-      this.renderHistory(list);
-      this.renderRecent(list);
-    } catch (e) {
-      console.warn('Tarix yuklanmadi:', e);
-    }
+      this.renderHistory(list); this.renderRecent(list);
+    } catch (e) { console.warn(e); }
   },
 
   renderRecent(list) {
     const el = document.getElementById('rl');
     const r = list.slice(0, 3);
-
-    if (!r.length) {
-      el.innerHTML = '<div class="empty"><span class="ico">🎯</span>Hozircha bo\'sh</div>';
-      return;
-    }
-
-    el.innerHTML = r.map(h =>
-      '<div class="hi">' +
-        '<div class="hi-i">' +
-          '<h4>' + h.name + '</h4>' +
-          '<p>' + h.qr_type + ' · ' +
-              new Date(h.created_at).toLocaleString('uz') + '</p>' +
-        '</div>' +
-      '</div>'
-    ).join('');
+    if (!r.length) { el.innerHTML = '<div class="empty"><span class="ico">🎯</span>Bo\'sh</div>'; return; }
+    el.innerHTML = r.map(h => '<div class="hi"><div class="hi-i"><h4>' + h.name + '</h4><p>' + h.qr_type + ' · ' + new Date(h.created_at).toLocaleString('uz') + '</p></div></div>').join('');
   },
 
   renderHistory(list) {
     const el = document.getElementById('hl');
-
-    if (!list.length) {
-      el.innerHTML = '<div class="empty"><span class="ico">🕐</span>Tarix bo\'sh</div>';
-      return;
-    }
-
-    el.innerHTML = list.map(h =>
-      '<div class="hi">' +
-        '<div class="hi-i">' +
-          '<h4>' + h.name + '</h4>' +
-          '<p>' + h.qr_type + ' · ' +
-              new Date(h.created_at).toLocaleString('uz') + '</p>' +
-        '</div>' +
-        '<button class="ic" onclick="App.delQr(' + h.id + ')">🗑</button>' +
-      '</div>'
-    ).join('');
+    if (!list.length) { el.innerHTML = '<div class="empty"><span class="ico">🕐</span>Bo\'sh</div>'; return; }
+    el.innerHTML = list.map(h => '<div class="hi"><div class="hi-i"><h4>' + h.name + '</h4><p>' + h.qr_type + ' · ' + new Date(h.created_at).toLocaleString('uz') + '</p></div><button class="ic" onclick="App.delQr(' + h.id + ')">🗑</button></div>').join('');
   },
 
-  // ═══ QR O'CHIRISH ═══
   async delQr(id) {
-    if (!confirm('O\'chirilsinmi?')) return;
+    if (!confirm("O'chirilsinmi?")) return;
     try {
       await this.api('/api/qr/' + id, 'DELETE');
-      this.toast('O\'chirildi', 'info');
+      this.toast("O'chirildi", 'info');
       await this.loadHistory();
-      if (this.me) {
-        this.me.qr_count = Math.max(0, this.me.qr_count - 1);
-        this.updateStats();
-      }
-    } catch (e) {
-      this.toast(e.message, 'error');
-    }
+      if (this.me) { this.me.qr_count = Math.max(0, this.me.qr_count - 1); this.updateStats(); }
+    } catch (e) { this.toast(e.message, 'error'); }
   },
 
-  // ═══ REFERALLARNI YUKLASH ═══
   async loadRefs() {
     const u = window.Telegram?.WebApp?.initDataUnsafe?.user;
     if (!u) return;
-
     const bot = this.me?.bot_username || 'BotUsername';
-    const link = 'https://t.me/' + bot + '?start=ref_' + u.id;
-    document.getElementById('rlink').textContent = link;
-
+    document.getElementById('rlink').textContent = 'https://t.me/' + bot + '?start=ref_' + u.id;
     try {
       const data = await this.api('/api/ref/list');
       document.getElementById('rc').textContent = data.total || 0;
-
       const el = document.getElementById('rlist');
       if (!data.refs || !data.refs.length) {
         el.innerHTML = '<div class="empty"><span class="ico">👥</span>Referal yo\'q</div>';
-        return;
+      } else {
+        el.innerHTML = data.refs.map(r => '<div class="hi"><div class="hi-i"><h4>' + (r.first_name || 'Foydalanuvchi') + '</h4><p>@' + (r.username || '—') + '</p></div></div>').join('');
       }
-
-      el.innerHTML = data.refs.map(r =>
-        '<div class="hi">' +
-          '<div class="hi-i">' +
-            '<h4>' + (r.first_name || 'Foydalanuvchi') + '</h4>' +
-            '<p>@' + (r.username || '—') + ' · ' +
-                (r.created_at || '').slice(0, 10) + '</p>' +
-          '</div>' +
-        '</div>'
-      ).join('');
-    } catch (e) {
-      console.warn('Referallar yuklanmadi:', e);
-    }
+    } catch (e) { console.warn(e); }
   },
 
-  // ═══ REFERAL BIND ═══
   bindRef() {
     document.getElementById('cr').onclick = async () => {
-      const link = document.getElementById('rlink').textContent;
-      try {
-        await navigator.clipboard.writeText(link);
-        this.toast('Nusxalandi 📋', 'success');
-      } catch (e) {
-        this.toast('Nusxalab bo\'lmadi', 'error');
-      }
+      try { await navigator.clipboard.writeText(document.getElementById('rlink').textContent); this.toast('Nusxalandi 📋', 'success'); }
+      catch (e) { this.toast("Xato", 'error'); }
     };
-
     document.getElementById('sr').onclick = () => {
-      const link = document.getElementById('rlink').textContent;
-      window.open(
-        'https://t.me/share/url?url=' + encodeURIComponent(link) +
-        '&text=' + encodeURIComponent('QR Master — zo\'r bot!'),
-        '_blank'
-      );
+      const l = document.getElementById('rlink').textContent;
+      window.open('https://t.me/share/url?url=' + encodeURIComponent(l) + '&text=QR Master', '_blank');
     };
   },
 
-  // ═══ REKLAMA BIND ═══
   bindAds() {
     document.getElementById('wab').onclick = async () => {
       this.load(true);
       const ok = await AdManager.show();
       this.load(false);
-
       if (ok) {
         try {
           const r = await this.api('/api/qr/ad', 'POST', {});
@@ -2979,25 +2220,19 @@ const App = {
           this.me.ad_count = r.ad_count;
           this.updateStats();
           this.toast('🎁 +3 QR unlock!', 'success');
-        } catch (e) {
-          this.toast(e.message, 'error');
-        }
+        } catch (e) { this.toast(e.message, 'error'); }
       } else {
-        this.toast('Reklama ko\'rilmadi. Qayta urinib ko\'ring', 'error');
+        this.toast("Reklama ko'rilmadi", 'error');
       }
     };
-
     document.getElementById('ib').onclick = () => this.go('ref');
   },
 
-  // ═══ PROFIL BIND ═══
   bindProfile() {
     document.getElementById('tb').onclick = () => {
       const cur = document.documentElement.getAttribute('data-theme');
-      document.documentElement.setAttribute('data-theme',
-        cur === 'dark' ? 'light' : 'dark');
+      document.documentElement.setAttribute('data-theme', cur === 'dark' ? 'light' : 'dark');
     };
-
     document.getElementById('rl2').onclick = async () => {
       this.load(true);
       try {
@@ -3006,27 +2241,20 @@ const App = {
         await this.loadHistory();
         await this.loadRefs();
         this.toast('Yangilandi ✅', 'success');
-      } catch (e) {
-        this.toast(e.message, 'error');
-      }
+      } catch (e) { this.toast(e.message, 'error'); }
       this.load(false);
     };
   },
 
-  // ═══ FORMA BIND ═══
   bindForm() {
     document.getElementById('gb').onclick = () => this.generate();
     document.getElementById('bb').onclick = () => this.go('home');
     document.getElementById('dlb').onclick = () => this.download();
-    document.getElementById('sb').onclick = () => this.save();
 
-    // Logo yuklash
     document.getElementById('lf').onchange = (e) => {
       const f = e.target.files[0];
       if (!f) return;
-      if (f.size > 500 * 1024) {
-        return this.toast('Fayl 500 KB dan oshmasin', 'error');
-      }
+      if (f.size > 500 * 1024) return this.toast('500 KB dan oshmasin', 'error');
       const reader = new FileReader();
       reader.onload = (ev) => {
         this.logoData = ev.target.result;
@@ -3035,63 +2263,45 @@ const App = {
       };
       reader.readAsDataURL(f);
     };
-
     document.getElementById('cl').onclick = () => {
       this.logoData = null;
-      document.getElementById('lp').src =
-        "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='50' height='50'%3E%3Ctext x='50%25' y='55%25' text-anchor='middle' font-size='24' fill='%2364748b'%3E%2B%3C/text%3E%3C/svg%3E";
+      document.getElementById('lp').src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='50' height='50'%3E%3Ctext x='50%25' y='55%25' text-anchor='middle' font-size='24' fill='%2364748b'%3E%2B%3C/text%3E%3C/svg%3E";
       document.getElementById('cl').style.display = 'none';
     };
   },
 
-  // ═══ NAVIGATSIYA BIND ═══
   bindNav() {
-    document.querySelectorAll('.nb').forEach(b => {
-      b.onclick = () => this.go(b.dataset.page);
-    });
+    document.querySelectorAll('.nb').forEach(b => b.onclick = () => this.go(b.dataset.page));
   },
 
-  // ═══ SAHIFA ALMASHTIRISH ═══
   go(name) {
     document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-    const page = document.getElementById('p-' + name);
-    if (page) page.classList.add('active');
-
-    document.querySelectorAll('.nb').forEach(b => {
-      b.classList.toggle('active', b.dataset.page === name);
-    });
-
+    document.getElementById('p-' + name)?.classList.add('active');
+    document.querySelectorAll('.nb').forEach(b => b.classList.toggle('active', b.dataset.page === name));
     window.scrollTo({ top: 0, behavior: 'smooth' });
   },
 
-  // ═══ TOAST ═══
   toast(msg, type) {
     type = type || 'info';
     const w = document.getElementById('tw');
     const el = document.createElement('div');
-    el.className = 'toast ' + type;
-    el.textContent = msg;
-    w.appendChild(el);
-    setTimeout(() => el.remove(), 3500);
+    el.className = 'toast ' + type; el.textContent = msg;
+    w.appendChild(el); setTimeout(() => el.remove(), 3500);
   },
 
-  // ═══ LOADING ═══
-  load(on) {
-    document.getElementById('ld').classList.toggle('on', on);
-  },
+  load(on) { document.getElementById('ld').classList.toggle('on', on); }
 };
 
-// ═══ ISHGA TUSHIRISH ═══
 window.addEventListener('DOMContentLoaded', () => App.start());
 </script>
 </body>
 </html>
 '''
 
-# ═══════════════════════════════════════════════════════════════
-# FLASK API ROUTES
-# ═══════════════════════════════════════════════════════════════
 
+# ═══════════════════════════════════════════════════════════════
+# API ROUTES
+# ═══════════════════════════════════════════════════════════════
 @app.route("/", methods=["GET", "HEAD"])
 def index():
     return Response(HTML_PAGE, mimetype="text/html")
@@ -3104,28 +2314,16 @@ def health():
 
 @app.route("/api/me", methods=["POST", "GET", "OPTIONS"])
 def api_me():
-    """Foydalanuvchi ma'lumotlari."""
-    if request.method == "OPTIONS":
-        return jsonify({"ok": True})
-
+    if request.method == "OPTIONS": return jsonify({"ok": True})
     init_data = request.headers.get("X-Telegram-Init-Data", "")
-    try:
-        tg = validate_init_data(init_data)
-    except ValueError as e:
-        print(f"❌ Auth xato: {e}")
-        return jsonify({"detail": str(e)}), 401
-
+    try: tg = validate_init_data(init_data)
+    except ValueError as e: return jsonify({"detail": str(e)}), 401
     upsert_user(tg)
     u = get_user(tg["id"])
-    if not u:
-        return jsonify({"detail": "Foydalanuvchi topilmadi"}), 404
-
+    if not u: return jsonify({"detail": "Topilmadi"}), 404
     return jsonify({
-        "id": u["telegram_id"],
-        "username": u["username"],
-        "first_name": u["first_name"],
-        "qr_count": u["qr_count"],
-        "ad_count": u["ad_count"],
+        "id": u["telegram_id"], "username": u["username"], "first_name": u["first_name"],
+        "qr_count": u["qr_count"], "ad_count": u["ad_count"],
         "unlock_count": u.get("unlock_count", 0),
         "is_admin": is_admin(tg["id"]),
         "referrals": count_referrals(tg["id"]),
@@ -3139,19 +2337,14 @@ def api_me():
 @app.route("/api/qr/save", methods=["POST", "OPTIONS"])
 @auth_required
 def api_qr_save(tg):
-    """QR saqlash + botga xabar."""
     body = request.get_json(silent=True) or {}
     data = (body.get("data") or "").strip()
-
-    if not data:
-        return jsonify({"detail": "Ma'lumot bo'sh"}), 400
-    if len(data) > 5000:
-        return jsonify({"detail": "Ma'lumot juda uzun"}), 400
+    if not data: return jsonify({"detail": "Bo'sh"}), 400
+    if len(data) > 5000: return jsonify({"detail": "Juda uzun"}), 400
 
     upsert_user(tg)
     qr_type = body.get("qr_type") or "universal"
     name = (body.get("name") or "QR")[:255]
-
     add_qr(tg["id"], qr_type, name, data)
 
     u = get_user(tg["id"])
@@ -3161,160 +2354,88 @@ def api_qr_save(tg):
     per_ad = get_int_setting("qr_per_ad", 3)
     limit = free + unlock
 
-    # Reklama kerakmi?
     show_ad = False
     if per_ad > 0 and total > limit:
-        if (total - limit) % per_ad == 0:
-            show_ad = True
+        if (total - limit) % per_ad == 0: show_ad = True
 
     # Botga xabar
     try:
         kb = InlineKeyboardMarkup()
-        kb.add(InlineKeyboardButton(
-            "📜 Mening QR larim",
-            web_app=WebAppInfo(url=WEBAPP_URL)
-        ))
+        kb.add(InlineKeyboardButton("📜 Mening QR larim", web_app=WebAppInfo(url=WEBAPP_URL)))
         if show_ad:
-            kb.add(InlineKeyboardButton(
-                "🎬 Reklama ko'rish (+3 QR)",
-                web_app=WebAppInfo(url=WEBAPP_URL)
-            ))
-
-        text = (
-            f"✅ <b>Yangi QR kod saqlandi!</b>\n\n"
-            f"📌 <b>{name}</b>\n"
-            f"🔧 Turi: <code>{qr_type}</code>\n"
-            f"📊 Jami: <b>{total}</b> ta\n"
-        )
-
+            kb.add(InlineKeyboardButton("🎬 Reklama ko'rish (+3 QR)", web_app=WebAppInfo(url=WEBAPP_URL)))
+        text = (f"✅ <b>Yangi QR kod saqlandi!</b>\n\n"
+                f"📌 <b>{name}</b>\n🔧 Turi: <code>{qr_type}</code>\n📊 Jami: <b>{total}</b> ta\n")
         if show_ad:
             text += f"\n🎬 <b>Bepul limit tugadi!</b>\nReklama ko'rib +3 QR unlock oling."
-
         bot.send_message(tg["id"], text, reply_markup=kb)
     except Exception as e:
-        print(f"⚠️ Bot xabar yuborilmadi: {e}")
+        print(f"⚠️ Bot xabar: {e}")
 
-    return jsonify({
-        "ok": True,
-        "total": total,
-        "limit": limit,
-        "unlock": unlock,
-        "show_ad": show_ad,
-    })
+    return jsonify({"ok": True, "total": total, "limit": limit,
+                    "unlock": unlock, "show_ad": show_ad})
 
 
 @app.route("/api/qr/ad", methods=["POST", "OPTIONS"])
 @auth_required
 def api_qr_ad(tg):
-    """Reklama ko'rilgandan keyin unlock berish."""
     log_ad_event(tg["id"], "rewarded", "completed")
-
     bonus = get_int_setting("qr_per_ad", 3)
-    q_exec(
-        "UPDATE users SET unlock_count = unlock_count + ? WHERE telegram_id=?",
-        (bonus, tg["id"])
-    )
-
+    q_exec("UPDATE users SET unlock_count = unlock_count + ? WHERE telegram_id=?",
+           (bonus, tg["id"]))
     u = get_user(tg["id"])
-    return jsonify({
-        "unlock": u.get("unlock_count", 0),
-        "ad_count": u["ad_count"],
-    })
+    return jsonify({"unlock": u.get("unlock_count", 0), "ad_count": u["ad_count"]})
 
 
 @app.route("/api/qr/list", methods=["GET", "OPTIONS"])
 @auth_required
 def api_qr_list(tg):
-    """Foydalanuvchi QR ro'yxati."""
     qrs = get_qrs(tg["id"], 50, 0)
-    return jsonify([
-        {
-            "id": q["id"],
-            "name": q["name"],
-            "qr_type": q["qr_type"],
-            "qr_data": q["qr_data"],
-            "created_at": q["created_at"],
-        }
-        for q in qrs
-    ])
+    return jsonify([{"id": q["id"], "name": q["name"], "qr_type": q["qr_type"],
+                     "qr_data": q["qr_data"], "created_at": q["created_at"]} for q in qrs])
 
 
 @app.route("/api/qr/<int:qid>", methods=["DELETE", "OPTIONS"])
 @auth_required
 def api_qr_delete(tg, qid):
-    """QR o'chirish."""
-    if delete_qr(qid, tg["id"]):
-        return jsonify({"ok": True})
+    if delete_qr(qid, tg["id"]): return jsonify({"ok": True})
     return jsonify({"detail": "Topilmadi"}), 404
 
 
 @app.route("/api/ref/list", methods=["GET", "OPTIONS"])
 @auth_required
 def api_ref_list(tg):
-    """Referallar ro'yxati."""
     refs = get_referrals(tg["id"], 50, 0)
     return jsonify({
         "total": count_referrals(tg["id"]),
-        "refs": [
-            {
-                "first_name": r.get("first_name"),
-                "username": r.get("username"),
-                "created_at": r.get("created_at"),
-            }
-            for r in refs
-        ]
+        "refs": [{"first_name": r.get("first_name"), "username": r.get("username"),
+                  "created_at": r.get("created_at")} for r in refs]
     })
 
 
 # ═══════════════════════════════════════════════════════════════
-# BOT ISHGA TUSHIRISH
+# ISHGA TUSHIRISH
 # ═══════════════════════════════════════════════════════════════
 def run_bot():
-    """Botni alohida thread'da ishga tushirish."""
     while True:
         try:
             bot.remove_webhook()
             setup_bot()
             print("✅ Bot tayyor")
-            print("=" * 55)
-            print("🚀 Telegram'da /start bosing")
-            print("=" * 55)
-            bot.infinity_polling(
-                skip_pending=True,
-                timeout=30,
-                long_polling_timeout=30,
-            )
+            bot.infinity_polling(skip_pending=True, timeout=30, long_polling_timeout=30)
         except KeyboardInterrupt:
-            print("\n⏹ Bot to'xtatildi")
             break
         except Exception as e:
-            print(f"⚠️ Bot xatosi: {e}")
-            print("5 sekunddan keyin qayta urinish...")
+            print(f"⚠️ Bot: {e}")
             time.sleep(5)
 
 
-# ═══════════════════════════════════════════════════════════════
-# ASOSIY ISHGA TUSHIRISH
-# ═══════════════════════════════════════════════════════════════
 if __name__ == "__main__":
-    # Botni alohida thread'da
-    bot_thread = threading.Thread(target=run_bot, daemon=True)
-    bot_thread.start()
-
-    # Botning tayyor bo'lishini kutish
+    threading.Thread(target=run_bot, daemon=True).start()
     time.sleep(3)
-
-    # Flask serverni ishga tushirish
     print("=" * 55)
-    print(f"🌐 Server: http://0.0.0.0:{PORT}")
-    print(f"🔗 Mini App: {WEBAPP_URL}")
+    print(f"🌐 http://0.0.0.0:{PORT}")
+    print(f"🔗 {WEBAPP_URL}")
     print(f"👤 Admin: {ADMIN_IDS}")
-    print(f"💰 Monetag: {MONETAG_ZONE}")
     print("=" * 55)
-
-    app.run(
-        host="0.0.0.0",
-        port=PORT,
-        debug=False,
-        threaded=True,
-    )
+    app.run(host="0.0.0.0", port=PORT, debug=False, threaded=True)
