@@ -5,8 +5,15 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <title>QR Master</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
-<!-- MONETAG SDK (Zone: 11990967) -->
+<!-- QR kutubxona — 2 ta zaxira CDN bilan -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script>
+// Zaxira: agar cdnjs ishlamasa, jsdelivr yuklanadi
+if (typeof QRCode === 'undefined') {
+  document.write('<script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"><\/script>');
+}
+</script>
+<!-- MONETAG SDK -->
 <script src="//libtl.com/sdk.js" data-zone="11990967" data-sdk="show_11990967"></script>
 <style>
 :root{--bg:#fff;--fg:#0f172a;--muted:#64748b;--card:#f1f5f9;--primary:#6366f1;
@@ -30,7 +37,6 @@ background:linear-gradient(135deg,var(--primary),var(--primary-2));color:#fff}
 .hero h2{font-size:20px;margin-bottom:6px}.hero p{font-size:13px;opacity:.9}
 .section-title{font-size:15px;font-weight:700;margin:22px 0 12px;display:flex;
 justify-content:space-between;align-items:center}
-.section-title small{font-size:12px;color:var(--muted);font-weight:500}
 .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
 .type-card{background:var(--card);border:none;border-radius:14px;padding:14px 8px;
 display:flex;flex-direction:column;align-items:center;gap:6px;cursor:pointer;
@@ -46,8 +52,8 @@ font-weight:600;cursor:pointer;font-family:inherit}
 .nav-btn .ico{font-size:20px}
 .page{display:none;animation:fade .25s}.page.active{display:block}
 @keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
-.field{margin-bottom:14px}.field label{display:block;font-size:13px;color:var(--muted);
-margin-bottom:6px;font-weight:600}
+.field{margin-bottom:14px}
+.field label{display:block;font-size:13px;color:var(--muted);margin-bottom:6px;font-weight:600}
 .input,.select,.textarea{width:100%;padding:14px 16px;background:var(--card);
 border:1.5px solid transparent;border-radius:14px;font-size:15px;color:var(--fg);
 outline:none;font-family:inherit}
@@ -60,7 +66,7 @@ font-weight:700;cursor:pointer;font-family:inherit;transition:transform .15s}
 .btn-ghost{background:var(--card);color:var(--fg)}
 .qr-result{margin-top:20px;padding:20px;border-radius:var(--radius);
 background:var(--card);text-align:center}
-.qr-result canvas{border-radius:12px;max-width:100%}
+.qr-result img,.qr-result canvas{border-radius:12px;max-width:100%;height:auto}
 .qr-actions{display:flex;gap:8px;margin-top:14px}
 .qr-actions .btn{padding:12px;font-size:13px}
 .toast-wrap{position:fixed;top:80px;left:50%;transform:translateX(-50%);
@@ -69,15 +75,13 @@ z-index:1000;display:flex;flex-direction:column;gap:8px;pointer-events:none}
 font-weight:600;max-width:85vw;text-align:center}
 .toast.success{background:var(--success)}.toast.error{background:var(--danger)}
 .toast.info{background:var(--primary)}
-.hist-item{display:flex;align-items:center;gap:12px;padding:14px;
-background:var(--card);border-radius:14px;margin-bottom:8px}
-.hist-info{flex:1;min-width:0}.hist-info h4{font-size:14px;font-weight:700;
-margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.hist-info p{font-size:12px;color:var(--muted)}
-.icon-btn{width:34px;height:34px;border-radius:10px;border:none;background:var(--bg);
-color:var(--fg);cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center}
 .empty{text-align:center;padding:40px 20px;color:var(--muted);font-size:14px}
 .empty .ico{font-size:44px;display:block;margin-bottom:10px;opacity:.5}
+.hist-item{display:flex;align-items:center;gap:12px;padding:14px;
+background:var(--card);border-radius:14px;margin-bottom:8px}
+.hist-info{flex:1;min-width:0}
+.hist-info h4{font-size:14px;font-weight:700;margin-bottom:3px}
+.hist-info p{font-size:12px;color:var(--muted)}
 .profile-card{padding:20px;border-radius:var(--radius);
 background:linear-gradient(135deg,var(--primary),var(--primary-2));color:#fff;
 text-align:center;margin-bottom:16px}
@@ -96,12 +100,6 @@ align-items:center;justify-content:center;z-index:2000}
 .spin{width:42px;height:42px;border:3px solid rgba(255,255,255,.25);
 border-top-color:#fff;border-radius:50%;animation:sp .8s linear infinite}
 @keyframes sp{to{transform:rotate(360deg)}}
-.admin-card{background:var(--card);padding:16px;border-radius:14px;margin-bottom:12px}
-.admin-card h3{font-size:15px;font-weight:700;margin-bottom:12px}
-.admin-row{display:flex;justify-content:space-between;padding:8px 0;
-border-bottom:1px solid var(--border);font-size:13px}
-.admin-row:last-child{border-bottom:none}
-.admin-row .val{font-weight:700;color:var(--primary)}
 </style>
 </head>
 <body>
@@ -112,7 +110,6 @@ border-bottom:1px solid var(--border);font-size:13px}
 </div>
 
 <div class="main">
-  <!-- HOME -->
   <div class="page active" id="page-home">
     <div class="hero"><h2>🎯 Universal QR Platforma</h2>
     <p>13+ turdagi QR kod yaratish va dizayn</p></div>
@@ -122,7 +119,6 @@ border-bottom:1px solid var(--border);font-size:13px}
     <div id="recentList"></div>
   </div>
 
-  <!-- CREATE -->
   <div class="page" id="page-create">
     <div class="section-title" id="createTitle">QR kod</div>
     <div id="dynamicFields"></div>
@@ -133,16 +129,14 @@ border-bottom:1px solid var(--border);font-size:13px}
       <input type="color" id="backColor" value="#ffffff" style="width:100%;height:50px;border:none;border-radius:12px"></div>
     <div class="field"><label>O'lcham</label>
       <select class="select" id="qrSize">
-        <option value="256">256×256</option><option value="512" selected>512×512</option>
-        <option value="1024">1024×1024</option></select></div>
-    <div class="field"><label>Xatolik darajasi</label>
-      <select class="select" id="errLevel">
-        <option value="L">L — 7%</option><option value="M" selected>M — 15%</option>
-        <option value="Q">Q — 25%</option><option value="H">H — 30%</option></select></div>
+        <option value="256">256×256</option>
+        <option value="512" selected>512×512</option>
+        <option value="1024">1024×1024</option>
+      </select></div>
     <button class="btn btn-primary" id="genBtn">✨ QR kod yaratish</button>
     <button class="btn btn-ghost" id="backBtn" style="margin-top:8px">← Orqaga</button>
     <div class="qr-result" id="qrResult" style="display:none">
-      <canvas id="qrCanvas"></canvas>
+      <div id="qrContainer"></div>
       <div class="qr-actions">
         <button class="btn btn-primary" id="dlBtn">⬇️ Yuklab olish</button>
         <button class="btn btn-ghost" id="saveHistBtn">💾 Saqlash</button>
@@ -150,15 +144,28 @@ border-bottom:1px solid var(--border);font-size:13px}
     </div>
   </div>
 
-  <!-- HISTORY -->
-  <div class="page" id="page-history">
-    <div class="section-title">🕐 Tarix
-      <small><a href="#" id="clearHist" style="color:var(--danger);text-decoration:none">Tozalash</a></small>
+  <div class="page" id="page-ads">
+    <div class="section-title">📢 Reklama</div>
+    <div class="hero">
+      <h2>🎁 Mukofot olish</h2>
+      <p>Qisqa reklama ko'rib qo'shimcha imkoniyat oling</p>
     </div>
+    <button class="btn btn-primary" id="watchAdBtn" style="margin-bottom:14px">
+      ▶️ Reklama ko'rish
+    </button>
+    <div class="hist-item">
+      <div class="hist-info">
+        <h4>Ko'rilgan reklamalar</h4>
+        <p id="adsCount">0</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="page" id="page-history">
+    <div class="section-title">🕐 Tarix</div>
     <div id="historyList"></div>
   </div>
 
-  <!-- PROFILE -->
   <div class="page" id="page-profile">
     <div class="profile-card">
       <div class="av" id="profileAv">U</div>
@@ -169,36 +176,13 @@ border-bottom:1px solid var(--border);font-size:13px}
         <div class="stat"><b id="statAds">0</b><span>Reklama</span></div>
       </div>
     </div>
-    <button class="btn btn-ghost" id="themeBtn">🌗 Mavzuni almashtirish</button>
-    <button class="btn btn-ghost" id="adminBtn" style="margin-top:8px;display:none">⚙️ Admin panel</button>
-  </div>
-
-  <!-- ADMIN -->
-  <div class="page" id="page-admin">
-    <div class="section-title">⚙️ Admin panel</div>
-    <div class="admin-card">
-      <h3>💰 Monetag sozlamalari</h3>
-      <label style="font-size:12px;color:var(--muted)">Reklama yoqilganmi?</label>
-      <select class="input" id="setEnabled" style="margin-bottom:10px">
-        <option value="true">✅ Ha</option>
-        <option value="false">❌ Yo'q</option>
-      </select>
-      <label style="font-size:12px;color:var(--muted)">Boshida nechta QR tekin?</label>
-      <input class="input" id="setFree" type="number" min="0" value="3" style="margin-bottom:10px">
-      <label style="font-size:12px;color:var(--muted)">Har nechta QR dan keyin reklama?</label>
-      <input class="input" id="setPerAd" type="number" min="1" value="5" style="margin-bottom:10px">
-      <button class="btn btn-primary" onclick="Admin.save()">💾 Saqlash</button>
-    </div>
-    <div class="admin-card">
-      <h3>📊 Statistika</h3>
-      <div id="adminStats"></div>
-    </div>
-    <button class="btn btn-ghost" onclick="App.goPage('profile')">← Orqaga</button>
+    <button class="btn btn-ghost" id="themeBtn">🌗 Mavzu</button>
   </div>
 </div>
 
 <nav class="nav">
   <button class="nav-btn active" data-page="home"><span class="ico">🏠</span>Asosiy</button>
+  <button class="nav-btn" data-page="ads"><span class="ico">📢</span>Reklama</button>
   <button class="nav-btn" data-page="history"><span class="ico">🕐</span>Tarix</button>
   <button class="nav-btn" data-page="profile"><span class="ico">👤</span>Profil</button>
 </nav>
@@ -207,27 +191,15 @@ border-bottom:1px solid var(--border);font-size:13px}
 <div class="loading" id="loading"><div class="spin"></div></div>
 
 <script>
-// ═══════════════════════════════════════════════════════
-// ADMIN ID — o'zgartirmang
-// ═══════════════════════════════════════════════════════
-const ADMIN_ID = 8261542613;
-const MONETAG_ZONE = '11990967';
+// ═══════════════════════════════════════════════════════════
+// SOZLAMALAR
+// ═══════════════════════════════════════════════════════════
+const API_BASE = "";   // bo'sh — chunki bot.py bir xil domen
+const MONETAG_ZONE = "11990967";
 
-// ═══════════════════════════════════════════════════════
-// SOZLAMALAR (localStorage)
-// ═══════════════════════════════════════════════════════
-const Settings = {
-  get(k, def) {
-    return localStorage.getItem('qrm_' + k) || def;
-  },
-  set(k, v) {
-    localStorage.setItem('qrm_' + k, String(v));
-  }
-};
-
-// ═══════════════════════════════════════════════════════
-// REKLAMA MANAGER
-// ═══════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
+// REKLAMA
+// ═══════════════════════════════════════════════════════════
 const AdManager = {
   async show() {
     const fn = window['show_' + MONETAG_ZONE];
@@ -245,62 +217,58 @@ const AdManager = {
   }
 };
 
-// ═══════════════════════════════════════════════════════
-// ADMIN PANEL
-// ═══════════════════════════════════════════════════════
-const Admin = {
-  save() {
-    Settings.set('enabled', document.getElementById('setEnabled').value);
-    Settings.set('free', document.getElementById('setFree').value);
-    Settings.set('per_ad', document.getElementById('setPerAd').value);
-    App.toast('Saqlandi ✅', 'success');
-    this.loadStats();
-  },
-  load() {
-    document.getElementById('setEnabled').value = Settings.get('enabled', 'true');
-    document.getElementById('setFree').value = Settings.get('free', '3');
-    document.getElementById('setPerAd').value = Settings.get('per_ad', '5');
-    this.loadStats();
-  },
-  loadStats() {
-    const history = App.getHistory();
-    const ads = parseInt(Settings.get('total_ads', '0'));
-    document.getElementById('adminStats').innerHTML = `
-      <div class="admin-row"><span>Jami QR</span><span class="val">${history.length}</span></div>
-      <div class="admin-row"><span>Jami reklama</span><span class="val">${ads}</span></div>
-      <div class="admin-row"><span>Taxminiy daromad</span><span class="val">$${(ads * 5.5 / 1000).toFixed(3)}</span></div>
-      <div class="admin-row"><span>Boshida tekin</span><span class="val">${Settings.get('free', '3')}</span></div>
-      <div class="admin-row"><span>Har N QR da reklama</span><span class="val">${Settings.get('per_ad', '5')}</span></div>
-    `;
-  }
-};
-
-// ═══════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
 // APP
-// ═══════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
 const App = {
   currentType: 'universal',
-  currentCanvas: null,
+  qrCodeObj: null,
   currentData: null,
+  initData: '',
+  me: null,
 
   async init() {
     const tg = window.Telegram?.WebApp;
     if (tg) {
-      tg.ready(); tg.expand();
+      tg.ready();
+      tg.expand();
       document.documentElement.setAttribute('data-theme',
         tg.colorScheme === 'dark' ? 'dark' : 'light');
     }
+    this.initData = tg?.initData || '';
+
     this.renderTypes();
     this.bindNav();
     this.bindForm();
     this.bindProfile();
     this.loadProfile();
-    this.loadHistory();
-    // Admin tugmasi
-    const uid = tg?.initDataUnsafe?.user?.id;
-    if (uid === ADMIN_ID) {
-      document.getElementById('adminBtn').style.display = 'block';
+
+    if (this.initData) {
+      try {
+        this.me = await this.api('/api/auth/me', 'POST');
+        await this.loadHistory();
+      } catch (e) { console.warn('API:', e); }
     }
+
+    // URL hash
+    if (location.hash === '#ads') this.goPage('ads');
+  },
+
+  async api(path, method = 'GET', body = null) {
+    const opts = {
+      method,
+      headers: {
+        'X-Telegram-Init-Data': this.initData,
+        'Content-Type': 'application/json'
+      }
+    };
+    if (body) opts.body = JSON.stringify(body);
+    const r = await fetch(API_BASE + path, opts);
+    if (!r.ok) {
+      const e = await r.json().catch(() => ({ detail: 'Xatolik' }));
+      throw new Error(e.detail || 'Xatolik');
+    }
+    return r.json();
   },
 
   loadProfile() {
@@ -319,19 +287,34 @@ const App = {
     {id:'url',icon:'🔗',label:'URL',fields:[{k:'url',l:'Havola',t:'url',p:'https://example.com'}]},
     {id:'text',icon:'📝',label:'Matn',fields:[{k:'text',l:'Matn',t:'textarea'}]},
     {id:'wifi',icon:'📶',label:'Wi-Fi',fields:[
-      {k:'ssid',l:'Tarmoq nomi',t:'text'},{k:'pass',l:'Parol',t:'text'},
-      {k:'sec',l:'Xavfsizlik',t:'select',opts:['WPA','WEP','nopass']}]},
+      {k:'ssid',l:'Tarmoq nomi',t:'text'},
+      {k:'pass',l:'Parol',t:'text'},
+      {k:'sec',l:'Xavfsizlik',t:'select',opts:['WPA','WEP','nopass']}
+    ]},
     {id:'vcard',icon:'👤',label:'Kontakt',fields:[
-      {k:'first',l:'Ism',t:'text'},{k:'last',l:'Familiya',t:'text'},
-      {k:'phone',l:'Telefon',t:'tel'},{k:'email',l:'Email',t:'email'}]},
+      {k:'first',l:'Ism',t:'text'},
+      {k:'last',l:'Familiya',t:'text'},
+      {k:'phone',l:'Telefon',t:'tel'},
+      {k:'email',l:'Email',t:'email'}
+    ]},
     {id:'phone',icon:'📞',label:'Telefon',fields:[{k:'phone',l:'Raqam',t:'tel',p:'+998901234567'}]},
-    {id:'sms',icon:'💬',label:'SMS',fields:[{k:'phone',l:'Telefon',t:'tel'},{k:'msg',l:'Xabar',t:'textarea'}]},
-    {id:'email',icon:'✉️',label:'Email',fields:[{k:'to',l:'Kimga',t:'email'},{k:'subject',l:'Mavzu',t:'text'}]},
-    {id:'tg_profile',icon:'✈️',label:'TG',fields:[{k:'username',l:'Username',t:'text',p:'durov'}]},
-    {id:'instagram',icon:'📸',label:'Instagram',fields:[{k:'username',l:'Username',t:'text'}]},
-    {id:'youtube',icon:'▶️',label:'YouTube',fields:[{k:'url',l:'URL',t:'url'}]},
+    {id:'sms',icon:'💬',label:'SMS',fields:[
+      {k:'phone',l:'Telefon',t:'tel'},
+      {k:'msg',l:'Xabar',t:'textarea'}
+    ]},
+    {id:'email',icon:'✉️',label:'Email',fields:[
+      {k:'to',l:'Kimga',t:'email'},
+      {k:'subject',l:'Mavzu',t:'text'}
+    ]},
+    {id:'tg',icon:'✈️',label:'Telegram',fields:[{k:'username',l:'Username',t:'text',p:'durov'}]},
     {id:'geo',icon:'📍',label:'Geo',fields:[
-      {k:'lat',l:'Kenglik',t:'text',p:'41.311081'},{k:'lng',l:'Uzunlik',t:'text',p:'69.240562'}]},
+      {k:'lat',l:'Kenglik',t:'text',p:'41.311081'},
+      {k:'lng',l:'Uzunlik',t:'text',p:'69.240562'}
+    ]},
+    {id:'event',icon:'📅',label:'Tadbir',fields:[
+      {k:'title',l:'Nomi',t:'text'},
+      {k:'start',l:'Boshlanish',t:'text',p:'2025-12-31 18:00'}
+    ]},
     {id:'custom',icon:'⚙️',label:'Maxsus',fields:[{k:'raw',l:'Format',t:'textarea'}]},
   ],
 
@@ -339,7 +322,8 @@ const App = {
     document.getElementById('typeGrid').innerHTML = this.types.map(t =>
       `<button class="type-card" data-type="${t.id}">
         <span class="type-icon">${t.icon}</span>
-        <span class="type-label">${t.label}</span></button>`).join('');
+        <span class="type-label">${t.label}</span>
+      </button>`).join('');
     document.querySelectorAll('.type-card').forEach(b => {
       b.onclick = () => this.openCreate(b.dataset.type);
     });
@@ -352,9 +336,12 @@ const App = {
     document.getElementById('createTitle').textContent = `${t.icon} ${t.label}`;
     document.getElementById('dynamicFields').innerHTML = t.fields.map(f => {
       let el;
-      if (f.t === 'textarea') el = `<textarea class="textarea" id="f_${f.k}" placeholder="${f.p||''}"></textarea>`;
-      else if (f.t === 'select') el = `<select class="select" id="f_${f.k}">${f.opts.map(o=>`<option>${o}</option>`).join('')}</select>`;
-      else el = `<input class="input" type="${f.t}" id="f_${f.k}" placeholder="${f.p||''}">`;
+      if (f.t === 'textarea')
+        el = `<textarea class="textarea" id="f_${f.k}" placeholder="${f.p||''}"></textarea>`;
+      else if (f.t === 'select')
+        el = `<select class="select" id="f_${f.k}">${f.opts.map(o => `<option>${o}</option>`).join('')}</select>`;
+      else
+        el = `<input class="input" type="${f.t}" id="f_${f.k}" placeholder="${f.p||''}">`;
       return `<div class="field"><label>${f.l}</label>${el}</div>`;
     }).join('');
     document.getElementById('qrResult').style.display = 'none';
@@ -362,22 +349,25 @@ const App = {
   },
 
   buildPayload() {
-    const v = id => (document.getElementById('f_'+id)?.value || '').trim();
+    const v = id => (document.getElementById('f_' + id)?.value || '').trim();
     const enc = encodeURIComponent;
     const m = {
       universal: () => v('text'), text: () => v('text'),
-      url: () => v('url'), youtube: () => v('url'),
+      url: () => v('url'),
       wifi: () => `WIFI:T:${v('sec')||'WPA'};S:${v('ssid')};P:${v('pass')};;`,
-      vcard: () => ['BEGIN:VCARD','VERSION:3.0',`N:${v('last')};${v('first')};;;`,
+      vcard: () => ['BEGIN:VCARD','VERSION:3.0',
+        `N:${v('last')};${v('first')};;;`,
         `FN:${v('first')} ${v('last')}`.trim(),
-        v('phone') ? `TEL:${v('phone')}` : '', v('email') ? `EMAIL:${v('email')}` : '',
+        v('phone') ? `TEL:${v('phone')}` : '',
+        v('email') ? `EMAIL:${v('email')}` : '',
         'END:VCARD'].filter(Boolean).join('\n'),
       phone: () => `tel:${v('phone')}`,
       sms: () => `SMSTO:${v('phone')}:${v('msg')}`,
       email: () => `mailto:${v('to')}?subject=${enc(v('subject'))}`,
-      tg_profile: () => `https://t.me/${v('username').replace('@','')}`,
-      instagram: () => `https://instagram.com/${v('username').replace('@','')}`,
+      tg: () => `https://t.me/${v('username').replace('@','')}`,
       geo: () => `geo:${v('lat')},${v('lng')}`,
+      event: () => ['BEGIN:VEVENT',`SUMMARY:${v('title')}`,
+        `DTSTART:${v('start').replace(/[-: ]/g,'')}`,'END:VEVENT'].join('\n'),
       custom: () => v('raw'),
     };
     return (m[this.currentType] || (() => ''))();
@@ -386,22 +376,33 @@ const App = {
   async generate() {
     const data = this.buildPayload();
     if (!data) return this.toast("Ma'lumot kiriting", 'error');
+
+    if (typeof QRCode === 'undefined') {
+      return this.toast("QR kutubxona yuklanmagan. Internetni tekshiring.", 'error');
+    }
+
     const size = parseInt(document.getElementById('qrSize').value);
     const fill = document.getElementById('fillColor').value;
     const back = document.getElementById('backColor').value;
-    const ecc = document.getElementById('errLevel').value;
+
     try {
       this.showLoading(true);
-      const canvas = document.getElementById('qrCanvas');
-      await QRCode.toCanvas(canvas, data, {
-        width: size, margin: 2, errorCorrectionLevel: ecc,
-        color: { dark: fill, light: back }
+      const container = document.getElementById('qrContainer');
+      container.innerHTML = '';
+
+      this.qrCodeObj = new QRCode(container, {
+        text: data,
+        width: size,
+        height: size,
+        colorDark: fill,
+        colorLight: back,
+        correctLevel: QRCode.CorrectLevel.M,
       });
-      this.currentCanvas = canvas;
+
       this.currentData = data;
       document.getElementById('qrResult').style.display = 'block';
       document.getElementById('qrResult').scrollIntoView({ behavior: 'smooth' });
-      this.toast('Yaratildi ✅', 'success');
+      this.toast('QR kod yaratildi ✅', 'success');
     } catch (e) {
       this.toast('Xatolik: ' + e.message, 'error');
     } finally {
@@ -410,9 +411,10 @@ const App = {
   },
 
   download() {
-    if (!this.currentCanvas) return;
+    const canvas = document.querySelector('#qrContainer canvas');
+    if (!canvas) return this.toast('QR kod yo\'q', 'error');
     const a = document.createElement('a');
-    a.href = this.currentCanvas.toDataURL('image/png');
+    a.href = canvas.toDataURL('image/png');
     a.download = `qrmaster-${Date.now()}.png`;
     a.click();
     this.toast('Yuklab olindi ✅', 'success');
@@ -421,74 +423,52 @@ const App = {
   async saveToHistory() {
     if (!this.currentData) return;
     try {
-      // localStorage'ga saqlash
-      const history = this.getHistory();
-      history.unshift({
-        id: Date.now(),
-        type: this.currentType,
+      this.showLoading(true);
+      const res = await this.api('/api/qr/create', 'POST', {
+        qr_type: this.currentType,
         name: this.types.find(t => t.id === this.currentType)?.label || 'QR',
-        data: this.currentData,
-        dataUrl: this.currentCanvas.toDataURL('image/png'),
-        created_at: new Date().toISOString()
+        data: this.currentData
       });
-      // Faqat 100 ta saqlash
-      localStorage.setItem('qrm_history', JSON.stringify(history.slice(0, 100)));
       this.toast('Saqlandi 💾', 'success');
-      this.loadHistory();
+      await this.loadHistory();
 
-      // ═══ REKLAMA MANTIG'I ═══
-      const enabled = Settings.get('enabled', 'true') === 'true';
-      const free = parseInt(Settings.get('free', '3'));
-      const perAd = parseInt(Settings.get('per_ad', '5'));
-      const total = history.length;
-
-      if (enabled && perAd > 0 && total > free) {
-        const remaining = total - free;
-        if (remaining % perAd === 0) {
-          // Reklama vaqti keldi
-          setTimeout(async () => {
-            const ok = confirm(
-              `🎬 Reklama ko'rish\n\n` +
-              `Boshida ${free} ta QR tekin.\n` +
-              `Har ${perAd} QR dan keyin qisqa reklama.\n\n` +
-              `Davom etamizmi?`
-            );
-            if (ok) {
-              this.showLoading(true);
-              const watched = await AdManager.show();
-              this.showLoading(false);
-              if (watched) {
-                const ads = parseInt(Settings.get('total_ads', '0')) + 1;
-                Settings.set('total_ads', ads);
-                this.toast('🎁 Rahmat!', 'success');
-                this.updateAdsStat();
-              } else {
-                this.toast("Reklama ko'rilmadi", 'info');
-              }
-            }
-          }, 500);
+      if (res.show_ad) {
+        this.showLoading(false);
+        const ok = confirm(
+          `🎬 Reklama ko'rish\n\n` +
+          `Boshida ${res.free_qr} ta QR tekin.\n` +
+          `Har ${res.qr_per_ad} QR dan keyin qisqa reklama.\n\n` +
+          `Davom etamizmi?`
+        );
+        if (ok) {
+          this.showLoading(true);
+          const watched = await AdManager.show();
+          this.showLoading(false);
+          if (watched) {
+            await this.api('/api/qr/ad_complete', 'POST', {});
+            this.toast('🎁 Rahmat!', 'success');
+            this.loadHistory();
+          } else {
+            this.toast("Reklama ko'rilmadi", 'info');
+          }
         }
       }
     } catch (e) {
       this.toast(e.message, 'error');
+    } finally {
+      this.showLoading(false);
     }
   },
 
-  getHistory() {
-    try { return JSON.parse(localStorage.getItem('qrm_history') || '[]'); }
-    catch { return []; }
-  },
-
-  loadHistory() {
-    const list = this.getHistory();
-    this.renderRecent(list);
-    this.renderHistory(list);
-    document.getElementById('statCreated').textContent = list.length;
-    this.updateAdsStat();
-  },
-
-  updateAdsStat() {
-    document.getElementById('statAds').textContent = Settings.get('total_ads', '0');
+  async loadHistory() {
+    if (!this.initData) return;
+    try {
+      const list = await this.api('/api/qr/history');
+      this.renderHistory(list);
+      this.renderRecent(list);
+      document.getElementById('statCreated').textContent = list.length;
+      if (this.me) document.getElementById('statAds').textContent = 0;
+    } catch (e) { console.warn(e); }
   },
 
   renderRecent(list) {
@@ -499,7 +479,8 @@ const App = {
       return;
     }
     el.innerHTML = r.map(h => `<div class="hist-item"><div class="hist-info">
-      <h4>${h.name}</h4><p>${h.type} · ${new Date(h.created_at).toLocaleString('uz')}</p>
+      <h4>${h.name}</h4>
+      <p>${h.qr_type} · ${new Date(h.created_at).toLocaleString('uz')}</p>
     </div></div>`).join('');
   },
 
@@ -510,32 +491,15 @@ const App = {
       return;
     }
     el.innerHTML = list.map(h => `<div class="hist-item"><div class="hist-info">
-      <h4>${h.name}</h4><p>${h.type} · ${new Date(h.created_at).toLocaleString('uz')}</p>
-    </div><button class="icon-btn" onclick="App.delQr(${h.id})">🗑</button></div>`).join('');
-  },
-
-  delQr(id) {
-    const list = this.getHistory().filter(h => h.id !== id);
-    localStorage.setItem('qrm_history', JSON.stringify(list));
-    this.loadHistory();
-    this.toast("O'chirildi", 'info');
+      <h4>${h.name}</h4>
+      <p>${h.qr_type} · ${new Date(h.created_at).toLocaleString('uz')}</p>
+    </div></div>`).join('');
   },
 
   bindProfile() {
     document.getElementById('themeBtn').onclick = () => {
       const cur = document.documentElement.getAttribute('data-theme');
       document.documentElement.setAttribute('data-theme', cur === 'dark' ? 'light' : 'dark');
-    };
-    document.getElementById('adminBtn').onclick = () => {
-      Admin.load();
-      this.goPage('admin');
-    };
-    document.getElementById('clearHist').onclick = e => {
-      e.preventDefault();
-      if (!confirm("Tarix tozalansinmi?")) return;
-      localStorage.removeItem('qrm_history');
-      this.loadHistory();
-      this.toast('Tozalandi', 'success');
     };
   },
 
@@ -544,6 +508,19 @@ const App = {
     document.getElementById('backBtn').onclick = () => this.goPage('home');
     document.getElementById('dlBtn').onclick = () => this.download();
     document.getElementById('saveHistBtn').onclick = () => this.saveToHistory();
+    document.getElementById('watchAdBtn').onclick = async () => {
+      this.showLoading(true);
+      const ok = await AdManager.show();
+      this.showLoading(false);
+      if (ok) {
+        try { await this.api('/api/qr/ad_complete', 'POST', {}); } catch {}
+        const cur = parseInt(document.getElementById('adsCount').textContent) || 0;
+        document.getElementById('adsCount').textContent = cur + 1;
+        this.toast('🎁 Rahmat!', 'success');
+      } else {
+        this.toast("Reklama ko'rilmadi", 'info');
+      }
+    };
   },
 
   bindNav() {
